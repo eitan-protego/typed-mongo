@@ -1,0 +1,2 @@
+[tool.uv.workspace]
+members = ["typed_mongo", "typed_mongo_gen"]

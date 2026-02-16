@@ -1,20 +1,21 @@
 """Type-safe MongoDB operators and collection models."""
 
 from typed_mongo.operators import (
-    ElemMatch,
     Eq,
-    Exists,
+    Ne,
+    In,
+    Nin,
     Gt,
     Gte,
-    In,
     Lt,
     Lte,
-    Ne,
-    Nin,
-    Op,
     Range,
+    Exists,
     Regex,
+    ElemMatch,
+    Op,
 )
+from typed_mongo.model import MongoCollectionModel, get_registry, clear_registry
 
 __all__ = [
     "Eq",
@@ -30,4 +31,7 @@ __all__ = [
     "Regex",
     "ElemMatch",
     "Op",
+    "MongoCollectionModel",
+    "get_registry",
+    "clear_registry",
 ]

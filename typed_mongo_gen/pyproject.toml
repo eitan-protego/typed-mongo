@@ -1,6 +1,6 @@
 [build-system]
-requires = ["uv>=0.1.6"]
-build-backend = "uv"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "typed-mongo-gen"
@@ -12,6 +12,9 @@ dependencies = [
     "pydantic>=2.0",
     "cyclopts>=2.0",
 ]
+
+[tool.uv.sources]
+typed-mongo = { workspace = true }
 
 [project.scripts]
 typed-mongo-gen = "typed_mongo_gen.cli:app"

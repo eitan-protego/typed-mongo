@@ -1,7 +1,7 @@
 """Example: Basic usage of typed_mongo."""
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from typed_mongo import MongoCollectionModel
+from typed_mongo import MongoCollectionModel, get_registry
 
 
 # Define your models
@@ -22,8 +22,6 @@ class Product(MongoCollectionModel):
 
 
 # Models auto-register when defined
-from typed_mongo import get_registry
-
 print("Registered models:")
 for name in get_registry():
     print(f"  - {name}")
@@ -38,11 +36,9 @@ async def example():
     users = User.get_collection(db)
 
     # Insert a document
-    await users.insert_one({
-        "name": "Alice",
-        "email": "alice@example.com",
-        "age": 30
-    })
+    await users.insert_one(
+        {"name": "Alice", "email": "alice@example.com", "age": 30}
+    )
 
     # Query documents
     user = await users.find_one({"name": "Alice"})
@@ -51,4 +47,5 @@ async def example():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(example())

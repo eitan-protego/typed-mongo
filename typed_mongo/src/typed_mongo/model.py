@@ -52,7 +52,9 @@ class MongoCollectionModel(BaseModel):
             _MODEL_REGISTRY[cls.__name__] = cls
 
     @classmethod
-    def get_collection(cls, db: AsyncIOMotorDatabase) -> AsyncIOMotorCollection[dict[str, Any]]:
+    def get_collection(
+        cls, db: AsyncIOMotorDatabase
+    ) -> AsyncIOMotorCollection[dict[str, Any]]:
         """Get the MongoDB collection for this model.
 
         Args:

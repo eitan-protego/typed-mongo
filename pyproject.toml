@@ -1,2 +1,7 @@
 [tool.uv.workspace]
 members = ["typed_mongo", "typed_mongo_gen"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.1",
+]

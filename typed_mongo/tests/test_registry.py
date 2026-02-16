@@ -1,7 +1,6 @@
 """Tests for MongoCollectionModel registry."""
 
 import pytest
-from pydantic import BaseModel
 from typed_mongo.model import MongoCollectionModel, get_registry, clear_registry
 
 
@@ -46,6 +45,7 @@ def test_multiple_models_all_register():
 
 def test_get_registry_returns_copy():
     """get_registry should return a copy, not the internal dict."""
+
     class TestModel(MongoCollectionModel):
         __collection_name__ = "test"
         value: str
@@ -59,6 +59,7 @@ def test_get_registry_returns_copy():
 
 def test_clear_registry_removes_all():
     """clear_registry should remove all registered models."""
+
     class TestModel(MongoCollectionModel):
         __collection_name__ = "test"
         data: str

@@ -1,7 +1,7 @@
 """Example: Generate types from models."""
 
 from pathlib import Path
-from typed_mongo import MongoCollectionModel, clear_registry
+from typed_mongo import MongoCollectionModel
 
 
 # Define some models
@@ -38,6 +38,6 @@ if __name__ == "__main__":
     print(f"Generated types for {len(registry)} models:")
     for name in registry:
         print(f"  - {name}")
-    print(f"\nFiles written:")
+    print("\nFiles written:")
     print(f"  {runtime_path}")
     print(f"  {stub_path}")

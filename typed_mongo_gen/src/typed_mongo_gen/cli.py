@@ -10,9 +10,7 @@ from typed_mongo import get_registry
 from typed_mongo_gen.codegen import write_field_paths
 
 
-app = cyclopts.App(
-    help="Generate MongoDB field path types from Pydantic models"
-)
+app = cyclopts.App(help="Generate MongoDB field path types from Pydantic models")
 
 
 def _import_sources(sources: list[str]) -> None:
@@ -27,8 +25,7 @@ def _import_sources(sources: list[str]) -> None:
         if source_path.exists() and source_path.is_file():
             # File path - use importlib.util to import
             spec = importlib.util.spec_from_file_location(
-                f"__typed_mongo_gen_import_{source_path.stem}__",
-                source_path
+                f"__typed_mongo_gen_import_{source_path.stem}__", source_path
             )
             if spec is None or spec.loader is None:
                 print(f"ERROR: Cannot load file: {source}", file=sys.stderr)
@@ -71,7 +68,7 @@ def generate(
     if not registry:
         print(
             f"ERROR: No MongoCollectionModel subclasses found in sources: {sources}",
-            file=sys.stderr
+            file=sys.stderr,
         )
         sys.exit(1)
 
@@ -83,7 +80,7 @@ def generate(
     print(f"Generated {len(registry)} model types:")
     for model_name in sorted(registry.keys()):
         print(f"  - {model_name}")
-    print(f"\nOutput written to:")
+    print("\nOutput written to:")
     print(f"  {runtime_path.resolve()}")
     print(f"  {stub_path.resolve()}")
 

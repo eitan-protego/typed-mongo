@@ -21,7 +21,8 @@ def test_end_to_end_generation(tmp_path):
     """Test complete flow: define models -> run CLI -> verify output."""
     # Create a test models file
     models_file = tmp_path / "models.py"
-    models_file.write_text(dedent("""
+    models_file.write_text(
+        dedent("""
         from typed_mongo import MongoCollectionModel
         from pydantic import Field
 
@@ -40,7 +41,8 @@ def test_end_to_end_generation(tmp_path):
             product_id: str
             quantity: int
             total: float
-    """))
+    """)
+    )
 
     output_file = tmp_path / "types.py"
     stub_file = tmp_path / "types.pyi"
@@ -48,13 +50,16 @@ def test_end_to_end_generation(tmp_path):
     # Run the CLI
     result = subprocess.run(
         [
-            sys.executable, "-m", "typed_mongo_gen.cli",
+            sys.executable,
+            "-m",
+            "typed_mongo_gen.cli",
             str(models_file),
-            "--output", str(output_file)
+            "--output",
+            str(output_file),
         ],
         cwd=Path(__file__).parent.parent.parent,  # typed_mongo_gen root
         capture_output=True,
-        text=True
+        text=True,
     )
 
     # Verify success
@@ -71,7 +76,7 @@ def test_end_to_end_generation(tmp_path):
 
     # Verify stub file content
     stub_content = stub_file.read_text()
-    assert 'type ProductPath = Literal[' in stub_content
+    assert "type ProductPath = Literal[" in stub_content
     assert '"_id",' in stub_content  # serialization_alias
     assert '"name",' in stub_content
     assert '"price",' in stub_content
@@ -97,13 +102,16 @@ def test_cli_errors_on_empty_registry(tmp_path):
 
     result = subprocess.run(
         [
-            sys.executable, "-m", "typed_mongo_gen.cli",
+            sys.executable,
+            "-m",
+            "typed_mongo_gen.cli",
             str(empty_file),
-            "--output", str(output_file)
+            "--output",
+            str(output_file),
         ],
         cwd=Path(__file__).parent.parent.parent,
         capture_output=True,
-        text=True
+        text=True,
     )
 
     assert result.returncode == 1

@@ -31,7 +31,6 @@ def test_typed_collection_instantiates():
     # This is primarily a type-checking test
     # We can't easily test runtime behavior without a real MongoDB connection
     # Just verify the class exists and can be referenced
-    from typed_mongo.collection import TypedCollection
 
     assert TypedCollection is not None
     assert hasattr(TypedCollection, "find")

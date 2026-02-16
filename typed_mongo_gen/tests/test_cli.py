@@ -1,6 +1,5 @@
 """Tests for CLI functionality."""
 
-import sys
 from pathlib import Path
 import pytest
 from typed_mongo import MongoCollectionModel, clear_registry
@@ -16,7 +15,6 @@ def clean_registry():
 
 def test_import_sources_from_module_string():
     """CLI should be able to import sources from module strings."""
-    from typed_mongo_gen.cli import _import_sources
 
     # Create a test model that will auto-register
     class TestModel(MongoCollectionModel):
@@ -27,6 +25,7 @@ def test_import_sources_from_module_string():
     # would populate the registry (but we already have it)
     # This test verifies the mechanism works
     from typed_mongo import get_registry
+
     registry = get_registry()
     assert "TestModel" in registry
 
@@ -49,6 +48,7 @@ class FileModel(MongoCollectionModel):
     _import_sources([str(test_file)])
 
     from typed_mongo import get_registry
+
     registry = get_registry()
     assert "FileModel" in registry
 
@@ -56,7 +56,6 @@ class FileModel(MongoCollectionModel):
 def test_empty_registry_raises_error():
     """CLI should error if no models found after imports."""
     from typed_mongo_gen.cli import generate
-    from pathlib import Path
 
     clear_registry()
 

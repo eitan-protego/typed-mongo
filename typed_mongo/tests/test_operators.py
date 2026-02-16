@@ -1,7 +1,5 @@
 """Tests for MongoDB operator TypedDict definitions."""
 
-import pytest
-from typing import get_args, get_origin
 
 
 def test_import_operators():

@@ -16,6 +16,7 @@ from typed_mongo.operators import (
     Op,
 )
 from typed_mongo.model import MongoCollectionModel, get_registry, clear_registry
+from typed_mongo.collection import TypedCollection, TypedCursor
 
 __all__ = [
     "Eq",
@@ -34,4 +35,6 @@ __all__ = [
     "MongoCollectionModel",
     "get_registry",
     "clear_registry",
+    "TypedCollection",
+    "TypedCursor",
 ]

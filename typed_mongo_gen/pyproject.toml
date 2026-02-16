@@ -1,0 +1,23 @@
+[build-system]
+requires = ["uv>=0.1.6"]
+build-backend = "uv"
+
+[project]
+name = "typed-mongo-gen"
+version = "0.1.0"
+description = "Generate type-safe MongoDB field path types from Pydantic models"
+requires-python = ">=3.12"
+dependencies = [
+    "typed-mongo",
+    "pydantic>=2.0",
+    "cyclopts>=2.0",
+]
+
+[project.scripts]
+typed-mongo-gen = "typed_mongo_gen.cli:app"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1.0",
+]

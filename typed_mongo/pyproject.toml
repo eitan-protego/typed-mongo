@@ -1,6 +1,6 @@
 [build-system]
-requires = ["uv>=0.1.6"]
-build-backend = "uv"
+requires = ["uv_build>=0.1.6"]
+build-backend = "uv_build"
 
 [project]
 name = "typed-mongo"
@@ -16,4 +16,9 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "ruff>=0.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
 ]

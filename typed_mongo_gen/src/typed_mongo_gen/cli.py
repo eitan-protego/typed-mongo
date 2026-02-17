@@ -13,6 +13,31 @@ from typed_mongo_gen.codegen import write_field_paths
 app = cyclopts.App(help="Generate MongoDB field path types from Pydantic models")
 
 
+def _resolve_module_name(source_path: Path) -> str:
+    """Resolve the dotted Python module name for a file path via sys.path.
+
+    Compares the absolute file path against each sys.path entry and returns
+    the dotted module name if the file is importable from that entry.
+    Falls back to a synthetic name if no match is found.
+    """
+    abs_path = source_path.resolve()
+    for entry in sys.path:
+        if not entry:
+            continue
+        entry_path = Path(entry).resolve()
+        try:
+            rel = abs_path.relative_to(entry_path)
+        except ValueError:
+            continue
+        # Convert path to dotted name, stripping .py
+        parts = list(rel.parts)
+        if parts[-1].endswith(".py"):
+            parts[-1] = parts[-1][:-3]
+        return ".".join(parts)
+    # Fallback: synthetic name (imports will be unresolvable, but won't crash)
+    return f"__typed_mongo_gen_import_{source_path.stem}__"
+
+
 def _import_sources(sources: list[str]) -> None:
     """Import modules or files to populate the model registry.
 
@@ -23,10 +48,11 @@ def _import_sources(sources: list[str]) -> None:
         source_path = Path(source)
 
         if source_path.exists() and source_path.is_file():
-            # File path - use importlib.util to import
-            spec = importlib.util.spec_from_file_location(
-                f"__typed_mongo_gen_import_{source_path.stem}__", source_path
-            )
+            # File path - resolve real dotted name so __module__ is correct
+            module_name = _resolve_module_name(source_path)
+            if module_name in sys.modules:
+                continue
+            spec = importlib.util.spec_from_file_location(module_name, source_path)
             if spec is None or spec.loader is None:
                 print(f"ERROR: Cannot load file: {source}", file=sys.stderr)
                 sys.exit(1)

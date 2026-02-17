@@ -146,7 +146,7 @@ class TypedCollection[M: BaseModel, P, Q, F]:
 
     async def aggregate(self, pipeline: list[dict[str, Any]]) -> list[M]:
         """Run an aggregation pipeline and validate results as models."""
-        cursor = self._collection.aggregate(pipeline)
+        cursor = await self._collection.aggregate(pipeline)
         docs = await cursor.to_list()
         return [self._model.model_validate(doc) for doc in docs]
 

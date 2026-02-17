@@ -5,3 +5,10 @@ members = ["typed_mongo", "typed_mongo_gen"]
 dev = [
     "ruff>=0.15.1",
 ]
+
+[tool.ruff.lint]
+ignore = ["ANN401"]
+
+[tool.pyright]
+reportExplicitAny = false
+reportAny = false

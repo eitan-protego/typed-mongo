@@ -1,9 +1,10 @@
 """MongoDB collection model base class with automatic registry."""
 
-from typing import ClassVar, Any
-from pydantic import BaseModel
-from motor.motor_asyncio import AsyncIOMotorDatabase, AsyncIOMotorCollection
+from typing import Any, ClassVar
 
+from pydantic import BaseModel
+from pymongo.asynchronous.collection import AsyncCollection
+from pymongo.asynchronous.database import AsyncDatabase
 
 # Module-level registry
 _MODEL_REGISTRY: dict[str, type["MongoCollectionModel"]] = {}
@@ -43,7 +44,7 @@ class MongoCollectionModel(BaseModel):
 
     __collection_name__: ClassVar[str]
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         """Register concrete models when subclass is defined."""
         super().__init_subclass__(**kwargs)
         # Only register models that have __collection_name__ defined
@@ -53,14 +54,14 @@ class MongoCollectionModel(BaseModel):
 
     @classmethod
     def get_collection(
-        cls, db: AsyncIOMotorDatabase
-    ) -> AsyncIOMotorCollection[dict[str, Any]]:
+        cls, db: AsyncDatabase[dict[str, Any]]
+    ) -> AsyncCollection[dict[str, Any]]:
         """Get the MongoDB collection for this model.
 
         Args:
-            db: Motor AsyncIOMotorDatabase instance
+            db: AsyncDatabase instance
 
         Returns:
-            AsyncIOMotorCollection for this model's collection
+            AsyncCollection for this model's collection
         """
         return db.get_collection(cls.__collection_name__)

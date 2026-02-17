@@ -18,40 +18,51 @@ from typed_mongo_gen.introspect import collect_field_paths, collect_field_path_t
 _BUILTINS = frozenset({str, int, float, bool, list, dict, bytes, type(None)})
 
 
-def _annotation_to_source(annotation: Any) -> str:
-    """Convert a runtime type annotation to a valid Python source string."""
+def _module_alias(module: str) -> str:
+    """Convert a dotted module path to a unique Python identifier alias."""
+    return "_" + module.replace(".", "_")
+
+
+def _annotation_to_source(
+    annotation: Any, module_aliases: dict[str, str] | None = None
+) -> str:
+    """Convert a runtime type annotation to a valid Python source string.
+
+    module_aliases maps module path -> alias for types whose module has a
+    naming conflict and must be accessed as ``alias.Name``.
+    """
     # NoneType
     if annotation is type(None):
         return "None"
 
     # TypeAliasType -- unwrap
     if isinstance(annotation, typing.TypeAliasType):
-        return _annotation_to_source(annotation.__value__)
+        return _annotation_to_source(annotation.__value__, module_aliases)
 
     origin = get_origin(annotation)
 
     # Annotated[X, ...] -- unwrap to X
     if origin is typing.Annotated:
-        return _annotation_to_source(get_args(annotation)[0])
+        return _annotation_to_source(get_args(annotation)[0], module_aliases)
 
     # Union / Optional (X | Y)
     if origin is types.UnionType or origin is typing.Union:
-        parts = [_annotation_to_source(a) for a in get_args(annotation)]
+        parts = [_annotation_to_source(a, module_aliases) for a in get_args(annotation)]
         return " | ".join(parts)
 
     # list[X]
     if origin is list:
         args = get_args(annotation)
         if args:
-            return f"list[{_annotation_to_source(args[0])}]"
+            return f"list[{_annotation_to_source(args[0], module_aliases)}]"
         return "list"
 
     # dict[K, V]
     if origin is dict:
         args = get_args(annotation)
         if args and len(args) == 2:
-            k = _annotation_to_source(args[0])
-            v = _annotation_to_source(args[1])
+            k = _annotation_to_source(args[0], module_aliases)
+            v = _annotation_to_source(args[1], module_aliases)
             return f"dict[{k}, {v}]"
         return "dict"
 
@@ -66,68 +77,61 @@ def _annotation_to_source(annotation: Any) -> str:
 
     # Concrete class (BaseModel subclass, Enum subclass, str, int, etc.)
     if isinstance(annotation, type):
-        return annotation.__name__
+        if annotation in _BUILTINS:
+            return annotation.__name__
+        module = annotation.__module__
+        name = annotation.__name__
+        if module_aliases and module in module_aliases:
+            return f"{module_aliases[module]}.{name}"
+        return name
 
     return repr(annotation)
 
 
 def _collect_imports(annotation: Any) -> set[tuple[str, str]]:
-    """Return set of (module, name) tuples for types that need importing.
-
-    Builtins (str, int, float, bool, list, dict, bytes, NoneType) need no import.
-    """
+    """Return set of (module, name) tuples for types that need importing."""
     imports: set[tuple[str, str]] = set()
     _collect_imports_inner(annotation, imports)
     return imports
 
 
 def _collect_imports_inner(annotation: Any, imports: set[tuple[str, str]]) -> None:
-    # NoneType -- no import needed
     if annotation is type(None):
         return
 
-    # TypeAliasType -- unwrap
     if isinstance(annotation, typing.TypeAliasType):
         _collect_imports_inner(annotation.__value__, imports)
         return
 
     origin = get_origin(annotation)
 
-    # Annotated[X, ...] -- unwrap
     if origin is typing.Annotated:
         _collect_imports_inner(get_args(annotation)[0], imports)
         return
 
-    # Union / Optional
     if origin is types.UnionType or origin is typing.Union:
         for arg in get_args(annotation):
             _collect_imports_inner(arg, imports)
         return
 
-    # list[X]
     if origin is list:
         args = get_args(annotation)
         if args:
             _collect_imports_inner(args[0], imports)
         return
 
-    # dict[K, V]
     if origin is dict:
         for arg in get_args(annotation):
             _collect_imports_inner(arg, imports)
         return
 
-    # Literal[...] -- needs typing.Literal import
     if origin is Literal:
         imports.add(("typing", "Literal"))
         return
 
-    # typing.Any
     if annotation is Any:
-        # Already imported as part of the header
         return
 
-    # Concrete class
     if isinstance(annotation, type):
         if annotation in _BUILTINS:
             return
@@ -137,11 +141,35 @@ def _collect_imports_inner(annotation: Any, imports: set[tuple[str, str]]) -> No
             imports.add((module, name))
 
 
+def _build_module_aliases(all_imports: set[tuple[str, str]]) -> dict[str, str]:
+    """Detect naming conflicts and return a module -> alias mapping.
+
+    Only modules that export at least one name that conflicts with another
+    module are aliased. Non-conflicting modules use direct ``from M import N``
+    imports and return an empty alias mapping.
+    """
+    # Only user-land imports can conflict; typing is always direct
+    user_imports = {(m, n) for m, n in all_imports if m != "typing"}
+
+    name_to_modules: dict[str, list[str]] = {}
+    for module, name in user_imports:
+        name_to_modules.setdefault(name, []).append(module)
+
+    conflicting_modules = {
+        m
+        for modules in name_to_modules.values()
+        if len(modules) > 1
+        for m in modules
+    }
+    return {m: _module_alias(m) for m in conflicting_modules}
+
+
 def _write_headers(
     runtime_f: typing.TextIO,
     stub_f: typing.TextIO,
     all_imports: set[tuple[str, str]],
     model_imports: dict[str, set[str]],
+    module_aliases: dict[str, str],
 ) -> None:
     """Write headers to both runtime .py and stub .pyi files."""
     header = '''"""Auto-generated MongoDB field path types.
@@ -152,7 +180,7 @@ Do not edit manually. Regenerate with:
 
 '''
 
-    # Runtime: minimal header with TypedCollection and model imports
+    # Runtime: minimal header — TypedCollection + direct model class imports
     runtime_f.write(header)
     runtime_f.write("from typing import Any\n")
     runtime_f.write("from typed_mongo import TypedCollection\n")
@@ -161,24 +189,30 @@ Do not edit manually. Regenerate with:
         runtime_f.write(f"from {module} import {names}\n")
     runtime_f.write("\n")
 
-    # Stub: full header with all imports
+    # Stub: full header
     stub_f.write(header)
     stub_f.write("# ruff: noqa: E501\n\n")
 
-    # Build import lines for stub
-    imports_by_module: dict[str, set[str]] = {}
-    for module, type_name in all_imports:
-        imports_by_module.setdefault(module, set()).add(type_name)
-
-    # typing imports: always need Literal, TypedDict, Any
-    typing_names = imports_by_module.pop("typing", set())
+    # typing imports (always direct)
+    typing_names = {n for m, n in all_imports if m == "typing"}
     typing_names |= {"Literal", "TypedDict", "Any"}
     stub_f.write(f"from typing import {', '.join(sorted(typing_names))}\n")
 
-    # Other imports, sorted by module
-    for module in sorted(imports_by_module):
-        names = sorted(imports_by_module[module])
+    # Direct from-imports for non-conflicting user modules
+    direct_by_module: dict[str, set[str]] = {}
+    for module, name in all_imports:
+        if module == "typing":
+            continue
+        if module not in module_aliases:
+            direct_by_module.setdefault(module, set()).add(name)
+    for module in sorted(direct_by_module):
+        names = sorted(direct_by_module[module])
         stub_f.write(f"from {module} import {', '.join(names)}\n")
+
+    # Aliased imports for conflicting modules
+    for module in sorted(module_aliases):
+        alias = module_aliases[module]
+        stub_f.write(f"import {module} as {alias}\n")
 
     stub_f.write("from pymongo.asynchronous.database import AsyncDatabase\n")
     stub_f.write("from typed_mongo import TypedCollection\n")
@@ -192,6 +226,7 @@ def _write_model(
     model_name: str,
     model: type[BaseModel],
     path_types: dict[str, Any],
+    module_aliases: dict[str, str],
 ) -> None:
     """Write a model's types and Collection class to both .py and .pyi files."""
     # Runtime: simple aliases + Collection class
@@ -205,8 +240,7 @@ def _write_model(
         f"        super().__init__({model_name}, {model_name}.get_collection(db))\n\n\n"
     )
 
-    # Stub: full type definitions + Collection class
-    # Path Literal
+    # Stub: Path Literal
     paths = collect_field_paths(model)
     stub_f.write(f"type {model_name}Path = Literal[\n")
     for path in paths:
@@ -216,7 +250,7 @@ def _write_model(
     # Query TypedDict (with Op[T])
     stub_f.write(f'{model_name}Query = TypedDict("{model_name}Query", {{\n')
     for path in sorted(path_types):
-        type_src = _annotation_to_source(path_types[path])
+        type_src = _annotation_to_source(path_types[path], module_aliases)
         if type_src == "dict[str, Any]":
             stub_f.write(f'    "{path}": {type_src},\n')
         else:
@@ -226,14 +260,15 @@ def _write_model(
     # Fields TypedDict (exact types)
     stub_f.write(f'{model_name}Fields = TypedDict("{model_name}Fields", {{\n')
     for path in sorted(path_types):
-        type_src = _annotation_to_source(path_types[path])
+        type_src = _annotation_to_source(path_types[path], module_aliases)
         stub_f.write(f'    "{path}": {type_src},\n')
     stub_f.write("}, total=False)\n\n")
 
-    # Collection class
+    # Collection class — model ref may need aliasing if its module conflicts
+    model_ref = _annotation_to_source(model, module_aliases)
     stub_f.write(
         f"class {model_name}Collection("
-        f"TypedCollection[{model_name}, {model_name}Path, {model_name}Query, {model_name}Fields]"
+        f"TypedCollection[{model_ref}, {model_name}Path, {model_name}Query, {model_name}Fields]"
         f"):\n"
     )
     stub_f.write(
@@ -253,25 +288,26 @@ def write_field_paths(
         stub_path: Path to write the stub .pyi file
         models: Dictionary mapping model names to BaseModel classes
     """
-    # First pass: collect all imports needed for type annotations
     all_imports: set[tuple[str, str]] = set()
     model_path_types: dict[str, dict[str, Any]] = {}
-    # Model class imports (module -> names) for both runtime and stub
-    model_imports: dict[str, set[str]] = {}
+    model_imports: dict[str, set[str]] = {}  # for runtime .py direct imports
 
     for name, model in models.items():
         path_types = collect_field_path_types(model)
         model_path_types[name] = path_types
         for annotation in path_types.values():
             all_imports |= _collect_imports(annotation)
-        # Add the model class itself for Collection class definitions
+        # Add the model class itself (needed for Collection class definitions)
         if model.__module__ != "builtins":
             all_imports.add((model.__module__, model.__name__))
             model_imports.setdefault(model.__module__, set()).add(model.__name__)
 
-    # Write both files
+    module_aliases = _build_module_aliases(all_imports)
+
     with runtime_path.open("w") as runtime_f, stub_path.open("w") as stub_f:
-        _write_headers(runtime_f, stub_f, all_imports, model_imports)
+        _write_headers(runtime_f, stub_f, all_imports, model_imports, module_aliases)
 
         for name, model in models.items():
-            _write_model(runtime_f, stub_f, name, model, model_path_types[name])
+            _write_model(
+                runtime_f, stub_f, name, model, model_path_types[name], module_aliases
+            )

@@ -183,6 +183,7 @@ Do not edit manually. Regenerate with:
     # Runtime: minimal header — TypedCollection + direct model class imports
     runtime_f.write(header)
     runtime_f.write("from typing import Any\n")
+    runtime_f.write("from pymongo.asynchronous.database import AsyncDatabase\n")
     runtime_f.write("from typed_mongo import TypedCollection\n")
     for module in sorted(model_imports):
         names = ", ".join(sorted(model_imports[module]))
@@ -235,7 +236,7 @@ def _write_model(
     runtime_f.write(f"{model_name}Query = dict[str, Any]\n")
     runtime_f.write(f"{model_name}Fields = dict[str, Any]\n\n")
     runtime_f.write(f"class {model_name}Collection(TypedCollection):\n")
-    runtime_f.write(f"    def __init__(self, db):\n")
+    runtime_f.write(f"    def __init__(self, db: AsyncDatabase[dict[str, Any]]) -> None:\n")
     runtime_f.write(
         f"        super().__init__({model_name}, {model_name}.get_collection(db))\n\n\n"
     )

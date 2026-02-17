@@ -141,6 +141,7 @@ def _write_headers(
     runtime_f: typing.TextIO,
     stub_f: typing.TextIO,
     all_imports: set[tuple[str, str]],
+    model_imports: dict[str, set[str]],
 ) -> None:
     """Write headers to both runtime .py and stub .pyi files."""
     header = '''"""Auto-generated MongoDB field path types.
@@ -151,9 +152,14 @@ Do not edit manually. Regenerate with:
 
 '''
 
-    # Runtime: minimal header
+    # Runtime: minimal header with TypedCollection and model imports
     runtime_f.write(header)
-    runtime_f.write("from typing import Any\n\n")
+    runtime_f.write("from typing import Any\n")
+    runtime_f.write("from typed_mongo import TypedCollection\n")
+    for module in sorted(model_imports):
+        names = ", ".join(sorted(model_imports[module]))
+        runtime_f.write(f"from {module} import {names}\n")
+    runtime_f.write("\n")
 
     # Stub: full header with all imports
     stub_f.write(header)
@@ -174,6 +180,8 @@ Do not edit manually. Regenerate with:
         names = sorted(imports_by_module[module])
         stub_f.write(f"from {module} import {', '.join(names)}\n")
 
+    stub_f.write("from pymongo.asynchronous.database import AsyncDatabase\n")
+    stub_f.write("from typed_mongo import TypedCollection\n")
     stub_f.write("from typed_mongo.operators import Op\n")
     stub_f.write("\n")
 
@@ -185,14 +193,19 @@ def _write_model(
     model: type[BaseModel],
     path_types: dict[str, Any],
 ) -> None:
-    """Write a model's types to both runtime .py and stub .pyi files."""
-    # Runtime: simple aliases with comment header
+    """Write a model's types and Collection class to both .py and .pyi files."""
+    # Runtime: simple aliases + Collection class
     runtime_f.write(f"# {model_name}\n")
     runtime_f.write(f"type {model_name}Path = str\n")
     runtime_f.write(f"{model_name}Query = dict[str, Any]\n")
     runtime_f.write(f"{model_name}Fields = dict[str, Any]\n\n")
+    runtime_f.write(f"class {model_name}Collection(TypedCollection):\n")
+    runtime_f.write(f"    def __init__(self, db):\n")
+    runtime_f.write(
+        f"        super().__init__({model_name}, {model_name}.get_collection(db))\n\n\n"
+    )
 
-    # Stub: full type definitions
+    # Stub: full type definitions + Collection class
     # Path Literal
     paths = collect_field_paths(model)
     stub_f.write(f"type {model_name}Path = Literal[\n")
@@ -217,6 +230,16 @@ def _write_model(
         stub_f.write(f'    "{path}": {type_src},\n')
     stub_f.write("}, total=False)\n\n")
 
+    # Collection class
+    stub_f.write(
+        f"class {model_name}Collection("
+        f"TypedCollection[{model_name}, {model_name}Path, {model_name}Query, {model_name}Fields]"
+        f"):\n"
+    )
+    stub_f.write(
+        f"    def __init__(self, db: AsyncDatabase[dict[str, Any]]) -> None: ...\n\n\n"
+    )
+
 
 def write_field_paths(
     runtime_path: Path,
@@ -233,16 +256,22 @@ def write_field_paths(
     # First pass: collect all imports needed for type annotations
     all_imports: set[tuple[str, str]] = set()
     model_path_types: dict[str, dict[str, Any]] = {}
+    # Model class imports (module -> names) for both runtime and stub
+    model_imports: dict[str, set[str]] = {}
 
     for name, model in models.items():
         path_types = collect_field_path_types(model)
         model_path_types[name] = path_types
         for annotation in path_types.values():
             all_imports |= _collect_imports(annotation)
+        # Add the model class itself for Collection class definitions
+        if model.__module__ != "builtins":
+            all_imports.add((model.__module__, model.__name__))
+            model_imports.setdefault(model.__module__, set()).add(model.__name__)
 
     # Write both files
     with runtime_path.open("w") as runtime_f, stub_path.open("w") as stub_f:
-        _write_headers(runtime_f, stub_f, all_imports)
+        _write_headers(runtime_f, stub_f, all_imports, model_imports)
 
         for name, model in models.items():
             _write_model(runtime_f, stub_f, name, model, model_path_types[name])

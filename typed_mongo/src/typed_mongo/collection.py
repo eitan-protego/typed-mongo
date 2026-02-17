@@ -5,7 +5,7 @@ generated types instead of ``dict[str, Any]``, catching field path typos
 and wrong ``$set`` value types at type-check time.
 
 Type parameters:
-    M: Model class (Pydantic BaseModel subclass)
+    M: MongoCollectionModel subclass
     P: Literal path type (e.g. ``UserPath``) for single-field args like distinct
     Q: Query TypedDict (e.g. ``UserQuery``) for filter args
     F: Fields TypedDict (e.g. ``UserFields``) for $set value args
@@ -20,6 +20,8 @@ from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.cursor import AsyncCursor
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.results import DeleteResult, InsertOneResult, UpdateResult
+
+from typed_mongo.model import MongoCollectionModel
 
 
 class TypedCursor[M: BaseModel]:
@@ -64,7 +66,7 @@ class TypedCursor[M: BaseModel]:
         return self._model.model_validate(doc)
 
 
-class TypedCollection[M: BaseModel, P, Q, F]:
+class TypedCollection[M: MongoCollectionModel, P, Q, F]:
     """Type-safe wrapper around ``AsyncCollection``.
 
     Method signatures use generated types (M, P, Q, F) instead of
@@ -74,16 +76,14 @@ class TypedCollection[M: BaseModel, P, Q, F]:
     Usage::
 
         from typed_mongo import MongoCollectionModel
-        from my_app.types import UserPath, UserQuery, UserFields
+        from my_app.types import UserCollection
 
         class User(MongoCollectionModel):
             __collection_name__ = "users"
             name: str
             email: str
 
-        users: TypedCollection[User, UserPath, UserQuery, UserFields] = (
-            TypedCollection.from_database(User, db)
-        )
+        users = UserCollection(db)
 
         # Type-checked filter and field values:
         await users.find_one({"name": "Alice"})
@@ -100,13 +100,10 @@ class TypedCollection[M: BaseModel, P, Q, F]:
 
     @classmethod
     def from_database(
-        cls, model: type[M], db: AsyncDatabase
+        cls, model: type[M], db: AsyncDatabase[dict[str, Any]]
     ) -> TypedCollection[M, Any, Any, Any]:
-        """Factory: create a TypedCollection from a database and model class.
-
-        The model must have a ``get_collection()`` class method.
-        """
-        collection = model.get_collection(db)  # type: ignore[attr-defined]
+        """Factory: create a TypedCollection from a database and model class."""
+        collection = model.get_collection(db)
         return cls(model, collection)
 
     # --- Read operations ---

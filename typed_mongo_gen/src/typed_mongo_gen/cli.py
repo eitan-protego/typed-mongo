@@ -1,14 +1,14 @@
 """Command-line interface for typed-mongo-gen."""
 
-import sys
 import importlib
 import importlib.util
+import sys
 from pathlib import Path
 
 import cyclopts
+
 from typed_mongo import get_registry
 from typed_mongo_gen.codegen import write_field_paths
-
 
 app = cyclopts.App(help="Generate MongoDB field path types from Pydantic models")
 
@@ -72,7 +72,7 @@ def _import_sources(sources: list[str]) -> None:
 @app.default
 def generate(
     sources: list[str],
-    output: Path = Path("_generated_types.py"),
+    output: Path | None = None,
 ) -> None:
     """Generate MongoDB field path types from Pydantic models.
 
@@ -99,6 +99,8 @@ def generate(
         sys.exit(1)
 
     # Generate types
+    if output is None:
+        output = Path(sources[0]).with_name("_generated_types.py")
     runtime_path = output
     stub_path = output.with_suffix(".pyi")
     write_field_paths(runtime_path, stub_path, registry)

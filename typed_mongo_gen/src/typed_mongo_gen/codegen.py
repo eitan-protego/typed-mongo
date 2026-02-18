@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import types
 import typing
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel
 
-from typed_mongo_gen.introspect import collect_field_paths, collect_field_path_types
+from typed_mongo_gen.introspect import collect_field_path_types, collect_field_paths
 
 _BUILTINS = frozenset({str, int, float, bool, list, dict, bytes, type(None)})
 
@@ -46,7 +47,7 @@ def _annotation_to_source(
         return _annotation_to_source(get_args(annotation)[0], module_aliases)
 
     # Union / Optional (X | Y)
-    if origin is types.UnionType or origin is typing.Union:
+    if origin is types.UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated]
         parts = [_annotation_to_source(a, module_aliases) for a in get_args(annotation)]
         return " | ".join(parts)
 
@@ -109,7 +110,7 @@ def _collect_imports_inner(annotation: Any, imports: set[tuple[str, str]]) -> No
         _collect_imports_inner(get_args(annotation)[0], imports)
         return
 
-    if origin is types.UnionType or origin is typing.Union:
+    if origin is types.UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated]
         for arg in get_args(annotation):
             _collect_imports_inner(arg, imports)
         return
@@ -156,10 +157,7 @@ def _build_module_aliases(all_imports: set[tuple[str, str]]) -> dict[str, str]:
         name_to_modules.setdefault(name, []).append(module)
 
     conflicting_modules = {
-        m
-        for modules in name_to_modules.values()
-        if len(modules) > 1
-        for m in modules
+        m for modules in name_to_modules.values() if len(modules) > 1 for m in modules
     }
     return {m: _module_alias(m) for m in conflicting_modules}
 
@@ -236,7 +234,9 @@ def _write_model(
     runtime_f.write(f"{model_name}Query = dict[str, Any]\n")
     runtime_f.write(f"{model_name}Fields = dict[str, Any]\n\n")
     runtime_f.write(f"class {model_name}Collection(TypedCollection):\n")
-    runtime_f.write(f"    def __init__(self, db: AsyncDatabase[dict[str, Any]]) -> None:\n")
+    runtime_f.write(
+        "    def __init__(self, db: AsyncDatabase[dict[str, Any]]) -> None:\n"
+    )
     runtime_f.write(
         f"        super().__init__({model_name}, {model_name}.get_collection(db))\n\n\n"
     )
@@ -270,18 +270,18 @@ def _write_model(
     model_ref = _annotation_to_source(model, module_aliases)
     stub_f.write(
         f"class {model_name}Collection("
-        f"TypedCollection[{model_ref}, {model_name}Path, {model_name}Query, {model_name}Fields]"
-        f"):\n"
+        + f"TypedCollection[{model_ref}, {model_name}Path, {model_name}Query, {model_name}Fields]"
+        + "):\n"
     )
     stub_f.write(
-        f"    def __init__(self, db: AsyncDatabase[dict[str, Any]]) -> None: ...\n\n\n"
+        "    def __init__(self, db: AsyncDatabase[dict[str, Any]]) -> None: ...\n\n\n"
     )
 
 
 def write_field_paths(
     runtime_path: Path,
     stub_path: Path,
-    models: dict[str, type[BaseModel]],
+    models: Mapping[str, type[BaseModel]],
 ) -> None:
     """Write both runtime .py and stub .pyi files for field path types.
 

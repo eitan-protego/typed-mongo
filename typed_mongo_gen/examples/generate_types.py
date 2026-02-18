@@ -1,12 +1,14 @@
 """Example: Generate types from models."""
 
 from pathlib import Path
+from typing import ClassVar
+
 from typed_mongo import MongoCollectionModel
 
 
 # Define some models
 class User(MongoCollectionModel):
-    __collection_name__ = "users"
+    __collection_name__: ClassVar[str] = "users"
 
     name: str
     email: str
@@ -14,7 +16,7 @@ class User(MongoCollectionModel):
 
 
 class Post(MongoCollectionModel):
-    __collection_name__ = "posts"
+    __collection_name__: ClassVar[str] = "posts"
 
     title: str
     content: str
@@ -24,8 +26,9 @@ class Post(MongoCollectionModel):
 
 # Generate types programmatically
 if __name__ == "__main__":
-    from typed_mongo import get_registry
     from typed_mongo_gen.codegen import write_field_paths
+
+    from typed_mongo import get_registry
 
     registry = get_registry()
 

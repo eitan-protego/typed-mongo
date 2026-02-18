@@ -10,7 +10,7 @@ import types
 import typing
 from typing import Any, get_args, get_origin
 
-from pydantic import BaseModel
+from pydantic import AliasGenerator, BaseModel
 
 _BUILTINS = frozenset({str, int, float, bool, list, dict, bytes, type(None)})
 
@@ -41,6 +41,8 @@ def _resolve_alias(model: type[BaseModel], field_name: str) -> str:
         return info.validation_alias
     # Fall back to alias_generator from model_config
     gen = model.model_config.get("alias_generator")
+    if isinstance(gen, AliasGenerator):
+        gen = gen.serialization_alias
     if gen is not None:
         return gen(field_name)
     return field_name
@@ -70,7 +72,7 @@ def _extract_base_models(annotation: Any) -> list[type[BaseModel]]:
         return []
 
     # Union / Optional -- collect from each variant
-    if origin is types.UnionType or origin is typing.Union:
+    if origin is types.UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated]
         result: list[type[BaseModel]] = []
         for arg in get_args(annotation):
             if arg is type(None):

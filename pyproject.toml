@@ -3,6 +3,8 @@ members = ["typed_mongo", "typed_mongo_gen"]
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.38.1",
+    "pytest>=9.0.2",
     "ruff>=0.15.1",
 ]
 
@@ -12,3 +14,4 @@ ignore = ["ANN401"]
 [tool.pyright]
 reportExplicitAny = false
 reportAny = false
+reportUnusedCallResult = false

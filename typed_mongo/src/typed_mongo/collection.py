@@ -31,9 +31,9 @@ class TypedCursor[M: BaseModel]:
     when iterating or calling ``to_list()``.
     """
 
-    def __init__(self, model: type[M], cursor: AsyncCursor) -> None:  # type: ignore[type-arg]
-        self._model = model
-        self._cursor = cursor
+    def __init__(self, model: type[M], cursor: AsyncCursor[dict[str, Any]]) -> None:
+        self._model: type[M] = model
+        self._cursor: AsyncCursor[dict[str, Any]] = cursor
 
     def sort(self, *args: Any, **kwargs: Any) -> TypedCursor[M]:
         """Sort results. Returns self for chaining."""
@@ -66,7 +66,12 @@ class TypedCursor[M: BaseModel]:
         return self._model.model_validate(doc)
 
 
-class TypedCollection[M: MongoCollectionModel, P, Q, F]:
+class TypedCollection[
+    M: MongoCollectionModel,
+    P: str,
+    Q: dict[str, Any],
+    F: dict[str, Any],
+]:
     """Type-safe wrapper around ``AsyncCollection``.
 
     Method signatures use generated types (M, P, Q, F) instead of
@@ -93,10 +98,10 @@ class TypedCollection[M: MongoCollectionModel, P, Q, F]:
     def __init__(
         self,
         model: type[M],
-        collection: AsyncCollection,  # type: ignore[type-arg]
+        collection: AsyncCollection[dict[str, Any]],
     ) -> None:
-        self._model = model
-        self._collection = collection
+        self._model: type[M] = model
+        self._collection: AsyncCollection[dict[str, Any]] = collection
 
     @classmethod
     def from_database(
@@ -128,7 +133,7 @@ class TypedCollection[M: MongoCollectionModel, P, Q, F]:
 
     async def count_documents(self, filter: Q) -> int:  # noqa: A002
         """Count documents matching the filter."""
-        return await self._collection.count_documents(filter)  # type: ignore[arg-type]
+        return await self._collection.count_documents(filter)
 
     async def distinct(  # noqa: A002
         self, key: P, filter: Q | None = None
@@ -139,7 +144,7 @@ class TypedCollection[M: MongoCollectionModel, P, Q, F]:
             key: Field path (type-checked against the Literal path type).
             filter: Optional query filter.
         """
-        return await self._collection.distinct(key, filter=filter)  # type: ignore[arg-type]
+        return await self._collection.distinct(key, filter=filter)
 
     async def aggregate(self, pipeline: list[dict[str, Any]]) -> list[M]:
         """Run an aggregation pipeline and validate results as models."""
@@ -211,7 +216,7 @@ class TypedCollection[M: MongoCollectionModel, P, Q, F]:
     # --- Escape hatch ---
 
     @property
-    def raw(self) -> AsyncCollection:  # type: ignore[type-arg]
+    def raw(self) -> AsyncCollection[dict[str, Any]]:
         """Access the underlying ``AsyncCollection`` directly.
 
         Use this when you need operations not covered by TypedCollection.

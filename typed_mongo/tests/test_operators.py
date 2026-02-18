@@ -97,11 +97,11 @@ def test_range_operator():
     from typed_mongo.operators import Range
 
     # Range supports various combinations (total=False)
-    range_full: Range[int] = {"$gte": 10, "$lte": 100}
+    range_full: Range = {"$gte": 10, "$lte": 100}
     assert range_full["$gte"] == 10
     assert range_full["$lte"] == 100
 
-    range_partial: Range[int] = {"$gt": 5}
+    range_partial: Range = {"$gt": 5}
     assert range_partial["$gt"] == 5
 
 

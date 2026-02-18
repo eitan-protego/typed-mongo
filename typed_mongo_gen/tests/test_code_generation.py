@@ -1,18 +1,22 @@
 """Tests for code generation."""
 
-from pydantic import BaseModel, Field
+from pathlib import Path
+from typing import ClassVar
+
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from typed_mongo_gen.codegen import write_field_paths
 
 
 class _TestModel(BaseModel):
-    model_config = {"alias_generator": to_camel}
     id: str = Field(validation_alias="_id", serialization_alias="_id")
     name: str
     age: int | None = None
 
+    model_config: ClassVar[ConfigDict] = {"alias_generator": to_camel}
 
-def test_write_field_paths_creates_both_files(tmp_path):
+
+def test_write_field_paths_creates_both_files(tmp_path: Path):
     """write_field_paths should create both .py and .pyi files."""
     runtime_path = tmp_path / "test_types.py"
     stub_path = tmp_path / "test_types.pyi"
@@ -23,7 +27,7 @@ def test_write_field_paths_creates_both_files(tmp_path):
     assert stub_path.exists()
 
 
-def test_runtime_file_has_simple_aliases(tmp_path):
+def test_runtime_file_has_simple_aliases(tmp_path: Path):
     """Runtime .py file should have simple type aliases."""
     runtime_path = tmp_path / "test_types.py"
     stub_path = tmp_path / "test_types.pyi"
@@ -40,7 +44,7 @@ def test_runtime_file_has_simple_aliases(tmp_path):
     assert "TypedDict(" not in content
 
 
-def test_stub_file_has_full_types(tmp_path):
+def test_stub_file_has_full_types(tmp_path: Path):
     """Stub .pyi file should have full Literal and TypedDict types."""
     runtime_path = tmp_path / "test_types.py"
     stub_path = tmp_path / "test_types.pyi"
@@ -57,7 +61,7 @@ def test_stub_file_has_full_types(tmp_path):
     assert '"age": Op[int | None],' in content
 
 
-def test_stub_file_includes_fields_typed_dict(tmp_path):
+def test_stub_file_includes_fields_typed_dict(tmp_path: Path):
     """Stub .pyi file should include Fields TypedDict with exact types."""
     runtime_path = tmp_path / "test_types.py"
     stub_path = tmp_path / "test_types.pyi"
@@ -71,7 +75,7 @@ def test_stub_file_includes_fields_typed_dict(tmp_path):
     assert '"age": int | None,' in content
 
 
-def test_generated_code_compiles(tmp_path):
+def test_generated_code_compiles(tmp_path: Path):
     """Generated stub file should be valid Python."""
     runtime_path = tmp_path / "test_types.py"
     stub_path = tmp_path / "test_types.pyi"

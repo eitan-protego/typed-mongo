@@ -35,9 +35,15 @@ ElemMatch = TypedDict("ElemMatch", {"$elemMatch": dict[str, Any]})
 NonGenericOp = TypedDict(
     "NonGenericOp", {"$exists": bool, "$regex": str, "$elemMatch": dict[str, Any]}
 )
+# Range: optional comparison keys (e.g. {"$gte": 10, "$lte": 100})
+Range = TypedDict(
+    "Range",
+    {"$gte": Any, "$gt": Any, "$lt": Any, "$lte": Any},
+    total=False,
+)
 
 # --- Union of all operators ---
-type NontrivialOp[T] = SelfOp[T] | ListOp[T] | NonGenericOp
+type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Range | Exists | Regex | ElemMatch
 type Op[T] = T | NontrivialOp[T]
 """
 Due to limitations of Python's type system, Op cannot match a predicate that combines

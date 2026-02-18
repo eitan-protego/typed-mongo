@@ -14,6 +14,7 @@ from typed_mongo.operators import (
     Ne,
     Nin,
     Op,
+    Range,
     Regex,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "Exists",
     "Regex",
     "ElemMatch",
+    "Range",
     "Op",
     "MongoCollectionModel",
     "get_registry",

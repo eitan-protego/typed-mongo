@@ -1,7 +1,11 @@
 """Tests for CLI functionality."""
 
 from pathlib import Path
+from typing import ClassVar
+
 import pytest
+from typed_mongo_gen.cli import _import_sources  # pyright: ignore[reportPrivateUsage]
+
 from typed_mongo import MongoCollectionModel, clear_registry
 
 
@@ -18,7 +22,7 @@ def test_import_sources_from_module_string():
 
     # Create a test model that will auto-register
     class TestModel(MongoCollectionModel):
-        __collection_name__ = "test"
+        __collection_name__: ClassVar[str] = "test"
         value: str
 
     # Since the model is already in this module, importing this module
@@ -27,12 +31,11 @@ def test_import_sources_from_module_string():
     from typed_mongo import get_registry
 
     registry = get_registry()
-    assert "TestModel" in registry
+    assert registry.get("TestModel") is TestModel
 
 
-def test_import_sources_from_file_path(tmp_path):
+def test_import_sources_from_file_path(tmp_path: Path):
     """CLI should be able to import sources from file paths."""
-    from typed_mongo_gen.cli import _import_sources
 
     # Create a temporary Python file with a model
     test_file = tmp_path / "test_models.py"

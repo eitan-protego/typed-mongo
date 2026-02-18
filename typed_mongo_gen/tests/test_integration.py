@@ -1,11 +1,12 @@
 """Integration tests for the full generation pipeline."""
 
-from pathlib import Path
-from textwrap import dedent
 import subprocess
 import sys
+from pathlib import Path
+from textwrap import dedent
 
 import pytest
+
 from typed_mongo import clear_registry
 
 
@@ -17,7 +18,7 @@ def clean_registry():
     clear_registry()
 
 
-def test_end_to_end_generation(tmp_path):
+def test_end_to_end_generation(tmp_path: Path):
     """Test complete flow: define models -> run CLI -> verify output."""
     # Create a test models file
     models_file = tmp_path / "models.py"
@@ -92,7 +93,7 @@ def test_end_to_end_generation(tmp_path):
     assert "Order" in stub_content
 
 
-def test_cli_errors_on_empty_registry(tmp_path):
+def test_cli_errors_on_empty_registry(tmp_path: Path):
     """CLI should exit with error if no models found."""
     # Create a file with no MongoCollectionModel subclasses
     empty_file = tmp_path / "empty.py"

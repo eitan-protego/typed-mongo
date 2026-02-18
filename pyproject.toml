@@ -2,11 +2,7 @@
 members = ["typed_mongo", "typed_mongo_gen"]
 
 [dependency-groups]
-dev = [
-    "basedpyright>=1.38.1",
-    "pytest>=9.0.2",
-    "ruff>=0.15.1",
-]
+dev = ["basedpyright>=1.38.1", "pytest>=9.0.2", "ruff>=0.15.1"]
 
 [tool.ruff.lint]
 ignore = ["ANN401"]

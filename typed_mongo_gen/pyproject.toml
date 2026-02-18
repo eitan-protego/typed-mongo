@@ -14,3 +14,8 @@ typed-mongo = { workspace = true }
 
 [project.scripts]
 typed-mongo-gen = "typed_mongo_gen.cli:app"
+
+[tool.pyright]
+reportExplicitAny = false
+reportAny = false
+reportUnusedCallResult = false

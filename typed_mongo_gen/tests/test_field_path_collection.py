@@ -1,28 +1,33 @@
 """Tests for field path collection from Pydantic models."""
 
-from pydantic import BaseModel, Field
+from typing import ClassVar
+
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-from typed_mongo_gen.introspect import collect_field_paths, collect_field_path_types
+from typed_mongo_gen.introspect import collect_field_path_types, collect_field_paths
 
 
 class _Leaf(BaseModel):
-    model_config = {"alias_generator": to_camel}
     first_name: str
     age: int
 
+    model_config: ClassVar[ConfigDict] = {"alias_generator": to_camel}
+
 
 class _Mid(BaseModel):
-    model_config = {"alias_generator": to_camel}
     leaf: _Leaf
     tags: list[str] = Field(default_factory=list)
 
+    model_config: ClassVar[ConfigDict] = {"alias_generator": to_camel}
+
 
 class _Root(BaseModel):
-    model_config = {"alias_generator": to_camel}
     id: str = Field(validation_alias="_id", serialization_alias="_id")
     mid: _Mid
     items: list[_Leaf] = Field(default_factory=list)
     score: float | None = None
+
+    model_config: ClassVar[ConfigDict] = {"alias_generator": to_camel}
 
 
 def test_flat_model():

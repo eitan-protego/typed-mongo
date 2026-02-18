@@ -1,6 +1,6 @@
 """Example: Basic usage of typed_mongo."""
 
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 from typed_mongo import MongoCollectionModel, get_registry
 
 
@@ -29,7 +29,7 @@ for name in get_registry():
 
 # Use with MongoDB
 async def example():
-    client = AsyncIOMotorClient("mongodb://localhost:27017")
+    client = AsyncMongoClient("mongodb://localhost:27017")
     db = client.test_db
 
     # Get typed collection

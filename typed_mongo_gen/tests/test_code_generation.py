@@ -100,3 +100,18 @@ def test_list_field_query_type_is_op_element_or_list(tmp_path: Path):
     content = stub_path.read_text()
     assert '"tags": Op[str | list[str]],' in content
     assert '"ids": Op[int | list[int]],' in content
+
+
+def test_nested_list_field_query_type_includes_all_levels(tmp_path: Path):
+    """Query TypedDict for list[list[list[T]]] should use Op[T | list[T] | list[list[T]] | list[list[list[T]]]]."""
+
+    class _ModelWithNestedList(BaseModel):
+        matrix: list[list[list[str]]]
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"ModelWithNestedList": _ModelWithNestedList})
+
+    content = stub_path.read_text()
+    expected = '"matrix": Op[str | list[str] | list[list[str]] | list[list[list[str]]]],'
+    assert expected in content

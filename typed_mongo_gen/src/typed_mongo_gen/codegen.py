@@ -94,8 +94,9 @@ def _query_value_type_src(
 ) -> str:
     """Source for the value type inside Op[...] in query TypedDicts.
 
-    For list[T] fields, MongoDB allows matching a single element T or the whole
-    list list[T], so we use T | list[T]. Other fields use the annotation as-is.
+    For list[T] fields (including nested lists), MongoDB allows matching at any
+    nesting level: e.g. list[list[list[Foo]]] allows Foo | list[Foo] |
+    list[list[Foo]] | list[list[list[Foo]]]. Other fields use the annotation as-is.
     """
     if isinstance(annotation, typing.TypeAliasType):
         return _query_value_type_src(annotation.__value__, module_aliases)
@@ -105,8 +106,9 @@ def _query_value_type_src(
     if origin is list:
         args = get_args(annotation)
         if args:
-            elem_src = _annotation_to_source(args[0], module_aliases)
-            return f"{elem_src} | list[{elem_src}]"
+            inner_src = _query_value_type_src(args[0], module_aliases)
+            full_list_src = _annotation_to_source(annotation, module_aliases)
+            return f"{inner_src} | {full_list_src}"
     return _annotation_to_source(annotation, module_aliases)
 
 

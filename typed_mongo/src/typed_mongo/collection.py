@@ -13,6 +13,7 @@ Type parameters:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel
@@ -69,8 +70,8 @@ class TypedCursor[M: BaseModel]:
 class TypedCollection[
     M: MongoCollectionModel,
     P: str,
-    Q: dict[str, Any],
-    F: dict[str, Any],
+    Q: Mapping[str, Any],
+    F: Mapping[str, Any],
 ]:
     """Type-safe wrapper around ``AsyncCollection``.
 

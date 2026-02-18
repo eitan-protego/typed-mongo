@@ -84,3 +84,19 @@ def test_generated_code_compiles(tmp_path: Path):
 
     stub_content = stub_path.read_text()
     compile(stub_content, "<test>", "exec")
+
+
+def test_list_field_query_type_is_op_element_or_list(tmp_path: Path):
+    """Query TypedDict for list[T] fields should use Op[T | list[T]]."""
+
+    class _ModelWithList(BaseModel):
+        tags: list[str]
+        ids: list[int]
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"ModelWithList": _ModelWithList})
+
+    content = stub_path.read_text()
+    assert '"tags": Op[str | list[str]],' in content
+    assert '"ids": Op[int | list[int]],' in content

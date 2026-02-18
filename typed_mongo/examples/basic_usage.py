@@ -1,12 +1,15 @@
 """Example: Basic usage of typed_mongo."""
 
+from typing import Any, ClassVar
+
 from pymongo import AsyncMongoClient
+
 from typed_mongo import MongoCollectionModel, get_registry
 
 
 # Define your models
 class User(MongoCollectionModel):
-    __collection_name__ = "users"
+    __collection_name__: ClassVar[str] = "users"
 
     name: str
     email: str
@@ -14,7 +17,7 @@ class User(MongoCollectionModel):
 
 
 class Product(MongoCollectionModel):
-    __collection_name__ = "products"
+    __collection_name__: ClassVar[str] = "products"
 
     name: str
     price: float
@@ -29,16 +32,14 @@ for name in get_registry():
 
 # Use with MongoDB
 async def example():
-    client = AsyncMongoClient("mongodb://localhost:27017")
+    client = AsyncMongoClient[dict[str, Any]]("mongodb://localhost:27017")
     db = client.test_db
 
     # Get typed collection
     users = User.get_collection(db)
 
     # Insert a document
-    await users.insert_one(
-        {"name": "Alice", "email": "alice@example.com", "age": 30}
-    )
+    await users.insert_one({"name": "Alice", "email": "alice@example.com", "age": 30})
 
     # Query documents
     user = await users.find_one({"name": "Alice"})

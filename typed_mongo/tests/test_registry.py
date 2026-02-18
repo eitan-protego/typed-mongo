@@ -1,7 +1,9 @@
 """Tests for MongoCollectionModel registry."""
 
+from typing import ClassVar
+
 import pytest
-from typed_mongo.model import MongoCollectionModel, get_registry, clear_registry
+from typed_mongo.model import MongoCollectionModel, clear_registry, get_registry
 
 
 @pytest.fixture(autouse=True)
@@ -17,7 +19,7 @@ def test_subclass_auto_registers():
     clear_registry()
 
     class TestModel(MongoCollectionModel):
-        __collection_name__ = "test_collection"
+        __collection_name__: ClassVar[str] = "test_collection"
         name: str
 
     registry = get_registry()
@@ -30,24 +32,24 @@ def test_multiple_models_all_register():
     clear_registry()
 
     class ModelA(MongoCollectionModel):
-        __collection_name__ = "collection_a"
+        __collection_name__: ClassVar[str] = "collection_a"
         field_a: str
 
     class ModelB(MongoCollectionModel):
-        __collection_name__ = "collection_b"
+        __collection_name__: ClassVar[str] = "collection_b"
         field_b: int
 
     registry = get_registry()
-    assert "ModelA" in registry
-    assert "ModelB" in registry
+    assert ModelA.__name__ in registry
+    assert ModelB.__name__ in registry
     assert len(registry) == 2
 
 
 def test_get_registry_returns_copy():
     """get_registry should return a copy, not the internal dict."""
 
-    class TestModel(MongoCollectionModel):
-        __collection_name__ = "test"
+    class TestModel(MongoCollectionModel):  # pyright: ignore[reportUnusedClass]
+        __collection_name__: ClassVar[str] = "test"
         value: str
 
     registry1 = get_registry()
@@ -60,8 +62,8 @@ def test_get_registry_returns_copy():
 def test_clear_registry_removes_all():
     """clear_registry should remove all registered models."""
 
-    class TestModel(MongoCollectionModel):
-        __collection_name__ = "test"
+    class TestModel(MongoCollectionModel):  # pyright: ignore[reportUnusedClass]
+        __collection_name__: ClassVar[str] = "test"
         data: str
 
     assert len(get_registry()) > 0
@@ -78,4 +80,4 @@ def test_model_without_collection_name_not_registered():
 
     # Should not be in registry since no __collection_name__
     registry = get_registry()
-    assert "AbstractBase" not in registry
+    assert AbstractBase.__name__ not in registry

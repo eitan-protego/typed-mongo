@@ -89,6 +89,27 @@ def _annotation_to_source(
     return repr(annotation)
 
 
+def _query_value_type_src(
+    annotation: Any, module_aliases: dict[str, str] | None = None
+) -> str:
+    """Source for the value type inside Op[...] in query TypedDicts.
+
+    For list[T] fields, MongoDB allows matching a single element T or the whole
+    list list[T], so we use T | list[T]. Other fields use the annotation as-is.
+    """
+    if isinstance(annotation, typing.TypeAliasType):
+        return _query_value_type_src(annotation.__value__, module_aliases)
+    origin = get_origin(annotation)
+    if origin is typing.Annotated:
+        return _query_value_type_src(get_args(annotation)[0], module_aliases)
+    if origin is list:
+        args = get_args(annotation)
+        if args:
+            elem_src = _annotation_to_source(args[0], module_aliases)
+            return f"{elem_src} | list[{elem_src}]"
+    return _annotation_to_source(annotation, module_aliases)
+
+
 def _collect_imports(annotation: Any) -> set[tuple[str, str]]:
     """Return set of (module, name) tuples for types that need importing."""
     imports: set[tuple[str, str]] = set()
@@ -248,14 +269,15 @@ def _write_model(
         stub_f.write(f'    "{path}",\n')
     stub_f.write("]\n\n")
 
-    # Query TypedDict (with Op[T])
+    # Query TypedDict (with Op[T]; list[T] fields use Op[T | list[T]])
     stub_f.write(f'{model_name}Query = TypedDict("{model_name}Query", {{\n')
     for path in sorted(path_types):
         type_src = _annotation_to_source(path_types[path], module_aliases)
         if type_src == "dict[str, Any]":
             stub_f.write(f'    "{path}": {type_src},\n')
         else:
-            stub_f.write(f'    "{path}": Op[{type_src}],\n')
+            query_val_src = _query_value_type_src(path_types[path], module_aliases)
+            stub_f.write(f'    "{path}": Op[{query_val_src}],\n')
     stub_f.write('    "$expr": dict[str, Any],\n')
     stub_f.write("}, total=False)\n\n")
 

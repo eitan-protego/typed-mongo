@@ -2,7 +2,7 @@
 
 from typing import Any, ClassVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
 
@@ -65,3 +65,7 @@ class MongoCollectionModel(BaseModel):
             AsyncCollection for this model's collection
         """
         return db.get_collection(cls.__collection_name__)
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        serialize_by_alias=True, validate_by_alias=True, validate_by_name=True
+    )

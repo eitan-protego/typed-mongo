@@ -9,31 +9,32 @@ Usage — callers write plain dict literals; the type checker validates::
     filter: CaseQuery = {"summary.payer": {"$in": ["Aetna", "BCBS"]}}
 """
 
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypedDict, cast
 
 # --- Generic operators (parameterized by field value type T) ---
 # Unfortunately, TypedDict can either be generic (class syntax) or contain keys
 # that are not valid field names (function call syntax) but not both.
 
-type Eq[T] = dict[Literal["$eq"], T]
-type Ne[T] = dict[Literal["$ne"], T]
-type In[T] = dict[Literal["$in"], list[T]]
-type Nin[T] = dict[Literal["$nin"], list[T]]
-type Gt[T] = dict[Literal["$gt"], T]
-type Gte[T] = dict[Literal["$gte"], T]
-type Lt[T] = dict[Literal["$lt"], T]
-type Lte[T] = dict[Literal["$lte"], T]
-type SelfOp[T] = dict[Literal["$eq", "$ne", "$gt", "$gte", "$lt", "$lte"], T]
-type ListOp[T] = dict[Literal["$in", "$nin"], list[T]]
+type Eq[T] = Mapping[Literal["$eq"], T]
+type Ne[T] = Mapping[Literal["$ne"], T]
+type In[T] = Mapping[Literal["$in"], Sequence[T]]
+type Nin[T] = Mapping[Literal["$nin"], Sequence[T]]
+type Gt[T] = Mapping[Literal["$gt"], T]
+type Gte[T] = Mapping[Literal["$gte"], T]
+type Lt[T] = Mapping[Literal["$lt"], T]
+type Lte[T] = Mapping[Literal["$lte"], T]
+type SelfOp[T] = Mapping[Literal["$eq", "$ne", "$gt", "$gte", "$lt", "$lte"], T]
+type ListOp[T] = Mapping[Literal["$in", "$nin"], Sequence[T]]
 
 
 # --- Non-generic operators ---
 
 Exists = TypedDict("Exists", {"$exists": bool})
 Regex = TypedDict("Regex", {"$regex": str})
-ElemMatch = TypedDict("ElemMatch", {"$elemMatch": dict[str, Any]})
+ElemMatch = TypedDict("ElemMatch", {"$elemMatch": Mapping[str, Any]})
 NonGenericOp = TypedDict(
-    "NonGenericOp", {"$exists": bool, "$regex": str, "$elemMatch": dict[str, Any]}
+    "NonGenericOp", {"$exists": bool, "$regex": str, "$elemMatch": Mapping[str, Any]}
 )
 # Range: optional comparison keys (e.g. {"$gte": 10, "$lte": 100})
 Range = TypedDict(
@@ -43,7 +44,7 @@ Range = TypedDict(
 )
 
 # --- Union of all operators ---
-type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Range | Exists | Regex | ElemMatch
+type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Exists | Regex | ElemMatch
 type Op[T] = T | NontrivialOp[T]
 """
 Due to limitations of Python's type system, Op cannot match a predicate that combines

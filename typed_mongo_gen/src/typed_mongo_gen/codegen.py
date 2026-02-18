@@ -256,6 +256,7 @@ def _write_model(
             stub_f.write(f'    "{path}": {type_src},\n')
         else:
             stub_f.write(f'    "{path}": Op[{type_src}],\n')
+    stub_f.write('    "$expr": dict[str, Any],\n')
     stub_f.write("}, total=False)\n\n")
 
     # Fields TypedDict (exact types)

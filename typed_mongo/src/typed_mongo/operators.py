@@ -36,12 +36,6 @@ ElemMatch = TypedDict("ElemMatch", {"$elemMatch": Mapping[str, Any]})
 NonGenericOp = TypedDict(
     "NonGenericOp", {"$exists": bool, "$regex": str, "$elemMatch": Mapping[str, Any]}
 )
-# Range: optional comparison keys (e.g. {"$gte": 10, "$lte": 100})
-Range = TypedDict(
-    "Range",
-    {"$gte": Any, "$gt": Any, "$lt": Any, "$lte": Any},
-    total=False,
-)
 
 # --- Union of all operators ---
 type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Exists | Regex | ElemMatch

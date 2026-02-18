@@ -96,13 +96,18 @@ def _query_value_type_src(
 
     For list[T] fields (including nested lists), MongoDB allows matching at any
     nesting level: e.g. list[list[list[Foo]]] allows Foo | list[Foo] |
-    list[list[Foo]] | list[list[list[Foo]]]. Other fields use the annotation as-is.
+    list[list[Foo]] | list[list[list[Foo]]]. For unions (e.g. list[Foo] | None,
+    list[Foo] | str), each member is expanded the same way. Other fields use
+    the annotation as-is.
     """
     if isinstance(annotation, typing.TypeAliasType):
         return _query_value_type_src(annotation.__value__, module_aliases)
     origin = get_origin(annotation)
     if origin is typing.Annotated:
         return _query_value_type_src(get_args(annotation)[0], module_aliases)
+    if origin is types.UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated]
+        parts = [_query_value_type_src(a, module_aliases) for a in get_args(annotation)]
+        return " | ".join(parts)
     if origin is list:
         args = get_args(annotation)
         if args:

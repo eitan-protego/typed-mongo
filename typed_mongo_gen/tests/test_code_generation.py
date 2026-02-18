@@ -110,8 +110,30 @@ def test_nested_list_field_query_type_includes_all_levels(tmp_path: Path):
 
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
-    write_field_paths(runtime_path, stub_path, {"ModelWithNestedList": _ModelWithNestedList})
+    write_field_paths(
+        runtime_path, stub_path, {"ModelWithNestedList": _ModelWithNestedList}
+    )
 
     content = stub_path.read_text()
-    expected = '"matrix": Op[str | list[str] | list[list[str]] | list[list[list[str]]]],'
+    expected = (
+        '"matrix": Op[str | list[str] | list[list[str]] | list[list[list[str]]]],'
+    )
     assert expected in content
+
+
+def test_union_with_list_expands_list_member(tmp_path: Path):
+    """Query TypedDict for list[Foo] | None and list[Foo] | str should expand list to Op[Foo | list[Foo]] and keep union."""
+
+    class _ModelWithOptionalList(BaseModel):
+        tags: list[str] | None
+        ids: list[int] | str
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(
+        runtime_path, stub_path, {"ModelWithOptionalList": _ModelWithOptionalList}
+    )
+
+    content = stub_path.read_text()
+    assert '"tags": Op[str | list[str] | None],' in content
+    assert '"ids": Op[int | list[int] | str],' in content

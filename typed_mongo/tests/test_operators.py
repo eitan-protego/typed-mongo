@@ -165,3 +165,27 @@ def test_agg_expr_op_accepts_known_operators():
 
     op3: AggExprOp = "$cond"
     assert op3 == "$cond"
+
+
+from typed_mongo.collection import TypedCollection
+
+
+def test_typed_collection_has_five_type_params():
+    """TypedCollection should accept M, Path, Query, Fields, Update params."""
+    params = TypedCollection.__type_params__
+    assert len(params) == 5
+    assert params[0].__name__ == "M"
+    assert params[1].__name__ == "Path"
+    assert params[2].__name__ == "Query"
+    assert params[3].__name__ == "Fields"
+    assert params[4].__name__ == "Update"
+
+
+def test_typed_collection_no_set_fields():
+    """set_fields should be removed from TypedCollection."""
+    assert not hasattr(TypedCollection, "set_fields")
+
+
+def test_typed_collection_has_update_many():
+    """TypedCollection should have update_many method."""
+    assert hasattr(TypedCollection, "update_many")

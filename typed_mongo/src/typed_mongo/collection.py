@@ -1,14 +1,15 @@
 """Type-safe wrapper around pymongo's AsyncCollection.
 
-TypedCollection[M, P, Q, F] provides typed method signatures that use
-generated types instead of ``dict[str, Any]``, catching field path typos
-and wrong ``$set`` value types at type-check time.
+TypedCollection[M, Path, Query, Fields, Update] provides typed method
+signatures that use generated types instead of ``dict[str, Any]``, catching
+field path typos and wrong update value types at type-check time.
 
 Type parameters:
     M: MongoCollectionModel subclass
-    P: Literal path type (e.g. ``UserPath``) for single-field args like distinct
-    Q: Query TypedDict (e.g. ``UserQuery``) for filter args
-    F: Fields TypedDict (e.g. ``UserFields``) for $set value args
+    Path: Literal path type (e.g. ``UserPath``) for single-field args like distinct
+    Query: Query TypedDict (e.g. ``UserQuery``) for filter args
+    Fields: Fields TypedDict (e.g. ``UserFields``) for $set value args
+    Update: Update TypedDict (e.g. ``UserUpdate``) for update documents
 """
 
 from __future__ import annotations
@@ -69,31 +70,23 @@ class TypedCursor[M: BaseModel]:
 
 class TypedCollection[
     M: MongoCollectionModel,
-    P: str,
-    Q: Mapping[str, Any],
-    F: Mapping[str, Any],
+    Path: str,
+    Query: Mapping[str, Any],
+    Fields: Mapping[str, Any],
+    Update: Mapping[str, Any],
 ]:
     """Type-safe wrapper around ``AsyncCollection``.
 
-    Method signatures use generated types (M, P, Q, F) instead of
-    ``dict[str, Any]``, so that field path typos and wrong ``$set``
-    value types are caught at type-check time.
+    Method signatures use generated types (M, Path, Query, Fields, Update)
+    instead of ``dict[str, Any]``, so that field path typos and wrong
+    update value types are caught at type-check time.
 
-    Usage::
-
-        from typed_mongo import MongoCollectionModel
-        from my_app.types import UserCollection
-
-        class User(MongoCollectionModel):
-            __collection_name__ = "users"
-            name: str
-            email: str
-
-        users = UserCollection(db)
-
-        # Type-checked filter and field values:
-        await users.find_one({"name": "Alice"})
-        await users.set_fields({"name": "Alice"}, {"email": "alice@example.com"})
+    Type parameters:
+        M: MongoCollectionModel subclass
+        Path: Literal path type (e.g. ``UserPath``) for single-field args
+        Query: Query TypedDict (e.g. ``UserQuery``) for filter args
+        Fields: Fields TypedDict (e.g. ``UserFields``) for $set value args
+        Update: Update TypedDict (e.g. ``UserUpdate``) for update documents
     """
 
     def __init__(
@@ -107,44 +100,33 @@ class TypedCollection[
     @classmethod
     def from_database(
         cls, model: type[M], db: AsyncDatabase[dict[str, Any]]
-    ) -> TypedCollection[M, Any, Any, Any]:
+    ) -> TypedCollection[M, Any, Any, Any, Any]:
         """Factory: create a TypedCollection from a database and model class."""
         collection = model.get_collection(db)
         return cls(model, collection)
 
     # --- Read operations ---
 
-    async def find_one(self, filter: Q) -> M | None:  # noqa: A002
-        """Find a single document matching the filter.
-
-        Returns a validated model instance, or ``None`` if not found.
-        """
+    async def find_one(self, filter: Query) -> M | None:  # noqa: A002
+        """Find a single document matching the filter."""
         doc = await self._collection.find_one(filter)
         if doc is None:
             return None
         return self._model.model_validate(doc)
 
-    def find(self, filter: Q | None = None) -> TypedCursor[M]:  # noqa: A002
-        """Find documents matching the filter.
-
-        Returns a ``TypedCursor`` that validates each document.
-        """
+    def find(self, filter: Query | None = None) -> TypedCursor[M]:  # noqa: A002
+        """Find documents matching the filter."""
         cursor = self._collection.find(filter)
         return TypedCursor(self._model, cursor)
 
-    async def count_documents(self, filter: Q) -> int:  # noqa: A002
+    async def count_documents(self, filter: Query) -> int:  # noqa: A002
         """Count documents matching the filter."""
         return await self._collection.count_documents(filter)
 
     async def distinct(  # noqa: A002
-        self, key: P, filter: Q | None = None
+        self, key: Path, filter: Query | None = None
     ) -> list[Any]:
-        """Get distinct values for a field.
-
-        Args:
-            key: Field path (type-checked against the Literal path type).
-            filter: Optional query filter.
-        """
+        """Get distinct values for a field."""
         return await self._collection.distinct(key, filter=filter)
 
     async def aggregate(self, pipeline: list[dict[str, Any]]) -> list[M]:
@@ -156,61 +138,45 @@ class TypedCollection[
     # --- Write operations ---
 
     async def insert_one(self, document: M) -> InsertOneResult:
-        """Insert a document, serialized via ``model_dump()``.
-
-        Note: Uses ``model_dump()`` (NOT ``model_dump(by_alias=True)``).
-        If your model uses aliases, ensure serialize_by_alias is set in
-        model_config.
-        """
+        """Insert a document, serialized via ``model_dump()``."""
         doc = document.model_dump()
         return await self._collection.insert_one(doc)
 
     async def replace_one(
         self,
-        filter: Q,
+        filter: Query,
         replacement: M,
         upsert: bool = False,
     ) -> UpdateResult:
-        """Replace a document, serialized via ``model_dump()``.
-
-        Note: Uses ``model_dump()`` (NOT ``model_dump(by_alias=True)``).
-        If your model uses aliases, ensure serialize_by_alias is set in
-        model_config.
-        """
+        """Replace a document, serialized via ``model_dump()``."""
         doc = replacement.model_dump()
         return await self._collection.replace_one(filter, doc, upsert=upsert)
 
     async def update_one(
         self,
-        filter: Q,  # noqa: A002
-        update: dict[str, Any],
+        filter: Query,  # noqa: A002
+        update: Update,
         upsert: bool = False,
         array_filters: list[dict[str, Any]] | None = None,
     ) -> UpdateResult:
-        """General update passthrough.
-
-        For type-safe ``$set`` operations, prefer ``set_fields()`` instead.
-        """
+        """Type-safe update of a single document."""
         return await self._collection.update_one(
             filter, update, upsert=upsert, array_filters=array_filters
         )
 
-    async def set_fields(
+    async def update_many(
         self,
-        filter: Q,
-        fields: F,
+        filter: Query,  # noqa: A002
+        update: Update,
         upsert: bool = False,
+        array_filters: list[dict[str, Any]] | None = None,
     ) -> UpdateResult:
-        """Type-safe ``$set`` update using the Fields TypedDict.
-
-        Wraps *fields* in ``{"$set": fields}`` and delegates to the
-        underlying collection's ``update_one``.
-        """
-        return await self._collection.update_one(
-            filter, {"$set": fields}, upsert=upsert
+        """Type-safe update of multiple documents."""
+        return await self._collection.update_many(
+            filter, update, upsert=upsert, array_filters=array_filters
         )
 
-    async def delete_one(self, filter: Q) -> DeleteResult:  # noqa: A002
+    async def delete_one(self, filter: Query) -> DeleteResult:  # noqa: A002
         """Delete a single document matching the filter."""
         return await self._collection.delete_one(filter)
 
@@ -218,8 +184,5 @@ class TypedCollection[
 
     @property
     def raw(self) -> AsyncCollection[dict[str, Any]]:
-        """Access the underlying ``AsyncCollection`` directly.
-
-        Use this when you need operations not covered by TypedCollection.
-        """
+        """Access the underlying ``AsyncCollection`` directly."""
         return self._collection

@@ -1,5 +1,6 @@
 """Tests for MongoDB operator TypedDict definitions."""
 
+from typed_mongo.collection import TypedCollection
 from typed_mongo.operators import (
     ElemMatch,
     Eq,
@@ -165,9 +166,6 @@ def test_agg_expr_op_accepts_known_operators():
 
     op3: AggExprOp = "$cond"
     assert op3 == "$cond"
-
-
-from typed_mongo.collection import TypedCollection
 
 
 def test_typed_collection_has_five_type_params():

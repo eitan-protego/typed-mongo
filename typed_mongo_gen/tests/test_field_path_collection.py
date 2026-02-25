@@ -4,7 +4,12 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-from typed_mongo_gen.introspect import collect_field_path_types, collect_field_paths
+from typed_mongo_gen.introspect import (
+    collect_field_path_types,
+    collect_field_paths,
+    extract_list_element_type,
+    is_numeric_type,
+)
 
 
 class _Leaf(BaseModel):
@@ -89,8 +94,6 @@ def test_optional_field_type():
 
 
 # --- is_numeric_type / extract_list_element_type tests ---
-
-from typed_mongo_gen.introspect import is_numeric_type, extract_list_element_type
 
 
 def test_is_numeric_type_int():

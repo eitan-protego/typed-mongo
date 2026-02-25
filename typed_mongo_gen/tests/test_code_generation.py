@@ -220,3 +220,78 @@ def test_runtime_has_new_type_aliases(tmp_path: Path):
     assert "MixedArrayElementFields = dict[str, Any]" in content
     assert "MixedArrayPopFields = dict[str, Any]" in content
     assert "MixedUnsetFields = dict[str, Any]" in content
+
+
+def test_ref_path_literal_type(tmp_path: Path):
+    """Stub should have RefPath with $-prefixed field paths."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert "type MixedRefPath = Literal[" in content
+    assert '"$name",' in content
+    assert '"$age",' in content
+    assert '"$score",' in content
+    assert '"$tags",' in content
+
+
+def test_update_typed_dict(tmp_path: Path):
+    """Stub should have Update TypedDict with all operator keys."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert 'MixedUpdate = TypedDict("MixedUpdate"' in content
+    # Find the Update section
+    update_start = content.index('MixedUpdate = TypedDict("MixedUpdate"')
+    update_end = content.index("total=False)", update_start)
+    update_section = content[update_start:update_end]
+    assert '"$set": MixedFields,' in update_section
+    assert '"$unset": MixedUnsetFields,' in update_section
+    assert '"$inc": MixedNumericFields,' in update_section
+    assert '"$mul": MixedNumericFields,' in update_section
+    assert '"$min": MixedFields,' in update_section
+    assert '"$max": MixedFields,' in update_section
+    assert '"$push": MixedArrayElementFields,' in update_section
+    assert '"$pull": MixedArrayElementFields,' in update_section
+    assert '"$addToSet": MixedArrayElementFields,' in update_section
+    assert '"$pop": MixedArrayPopFields,' in update_section
+
+
+def test_pipeline_set_fields_typed_dict(tmp_path: Path):
+    """Stub should have PipelineSetFields with T | RefPath | Mapping[AggExprOp, Any]."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert 'MixedPipelineSetFields = TypedDict("MixedPipelineSetFields"' in content
+    ps_start = content.index('MixedPipelineSetFields = TypedDict(')
+    ps_end = content.index("total=False)", ps_start)
+    ps_section = content[ps_start:ps_end]
+    assert '"name": str | MixedRefPath | Mapping[AggExprOp, Any],' in ps_section
+    assert '"score": float | MixedRefPath | Mapping[AggExprOp, Any],' in ps_section
+
+
+def test_pipeline_stage_union(tmp_path: Path):
+    """Stub should have PipelineStage union type."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert "type MixedPipelineStage = MixedPipelineSet | MixedPipelineUnset" in content
+    assert 'MixedPipelineSet = TypedDict("MixedPipelineSet"' in content
+    assert 'MixedPipelineUnset = TypedDict("MixedPipelineUnset"' in content
+
+
+def test_generated_update_code_compiles(tmp_path: Path):
+    """Generated stub with all update types should compile."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    stub_content = stub_path.read_text()
+    compile(stub_content, "<test>", "exec")

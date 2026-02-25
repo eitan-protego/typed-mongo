@@ -248,7 +248,8 @@ Do not edit manually. Regenerate with:
 
     stub_f.write("from pymongo.asynchronous.database import AsyncDatabase\n")
     stub_f.write("from typed_mongo import TypedCollection\n")
-    stub_f.write("from typed_mongo.operators import Op\n")
+    stub_f.write("from collections.abc import Mapping\n")
+    stub_f.write("from typed_mongo.operators import AggExprOp, Op\n")
     stub_f.write("\n")
 
 
@@ -269,7 +270,13 @@ def _write_model(
     runtime_f.write(f"{model_name}NumericFields = dict[str, Any]\n")
     runtime_f.write(f"{model_name}ArrayElementFields = dict[str, Any]\n")
     runtime_f.write(f"{model_name}ArrayPopFields = dict[str, Any]\n")
-    runtime_f.write(f"{model_name}UnsetFields = dict[str, Any]\n\n")
+    runtime_f.write(f"{model_name}UnsetFields = dict[str, Any]\n")
+    runtime_f.write(f"type {model_name}RefPath = str\n")
+    runtime_f.write(f"{model_name}PipelineSetFields = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}Update = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}PipelineSet = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}PipelineUnset = dict[str, Any]\n")
+    runtime_f.write(f"type {model_name}PipelineStage = dict[str, Any]\n\n")
     runtime_f.write(f"class {model_name}Collection(TypedCollection):\n")
     runtime_f.write(
         "    def __init__(self, db: AsyncDatabase[dict[str, Any]]) -> None:\n"
@@ -343,6 +350,44 @@ def _write_model(
     for path in sorted(path_types):
         stub_f.write(f"    \"{path}\": Literal[''],\n")
     stub_f.write("}, total=False)\n\n")
+
+    # RefPath: $-prefixed field paths for pipeline expressions
+    stub_f.write(f"type {model_name}RefPath = Literal[\n")
+    for path in paths:
+        stub_f.write(f'    "${path}",\n')
+    stub_f.write("]\n\n")
+
+    # PipelineSetFields TypedDict (T | RefPath | Mapping[AggExprOp, Any])
+    stub_f.write(f'{model_name}PipelineSetFields = TypedDict("{model_name}PipelineSetFields", {{\n')
+    for path in sorted(path_types):
+        type_src = _annotation_to_source(path_types[path], module_aliases)
+        stub_f.write(f'    "{path}": {type_src} | {model_name}RefPath | Mapping[AggExprOp, Any],\n')
+    stub_f.write("}, total=False)\n\n")
+
+    # Update TypedDict (unified update document)
+    stub_f.write(f'{model_name}Update = TypedDict("{model_name}Update", {{\n')
+    stub_f.write(f'    "$set": {model_name}Fields,\n')
+    stub_f.write(f'    "$unset": {model_name}UnsetFields,\n')
+    stub_f.write(f'    "$inc": {model_name}NumericFields,\n')
+    stub_f.write(f'    "$mul": {model_name}NumericFields,\n')
+    stub_f.write(f'    "$min": {model_name}Fields,\n')
+    stub_f.write(f'    "$max": {model_name}Fields,\n')
+    stub_f.write(f'    "$push": {model_name}ArrayElementFields,\n')
+    stub_f.write(f'    "$pull": {model_name}ArrayElementFields,\n')
+    stub_f.write(f'    "$addToSet": {model_name}ArrayElementFields,\n')
+    stub_f.write(f'    "$pop": {model_name}ArrayPopFields,\n')
+    stub_f.write("}, total=False)\n\n")
+
+    # Pipeline stage types
+    stub_f.write(f'{model_name}PipelineSet = TypedDict("{model_name}PipelineSet", {{\n')
+    stub_f.write(f'    "$set": {model_name}PipelineSetFields,\n')
+    stub_f.write("})\n\n")
+
+    stub_f.write(f'{model_name}PipelineUnset = TypedDict("{model_name}PipelineUnset", {{\n')
+    stub_f.write(f'    "$unset": {model_name}Path | list[{model_name}Path],\n')
+    stub_f.write("})\n\n")
+
+    stub_f.write(f"type {model_name}PipelineStage = {model_name}PipelineSet | {model_name}PipelineUnset\n\n")
 
     # Collection class — model ref may need aliasing if its module conflicts
     model_ref = _annotation_to_source(model, module_aliases)

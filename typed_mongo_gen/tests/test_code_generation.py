@@ -287,6 +287,17 @@ def test_pipeline_stage_union(tmp_path: Path):
     assert 'MixedPipelineUnset = TypedDict("MixedPipelineUnset"' in content
 
 
+def test_collection_stub_has_five_type_params(tmp_path: Path):
+    """Generated Collection stub should use all 5 type params including Update."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    expected = "TypedCollection[_ModelWithMixedFields, MixedPath, MixedQuery, MixedFields, MixedUpdate]"
+    assert expected in content
+
+
 def test_generated_update_code_compiles(tmp_path: Path):
     """Generated stub with all update types should compile."""
     runtime_path = tmp_path / "out.py"

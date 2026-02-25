@@ -393,7 +393,7 @@ def _write_model(
     model_ref = _annotation_to_source(model, module_aliases)
     stub_f.write(
         f"class {model_name}Collection("
-        + f"TypedCollection[{model_ref}, {model_name}Path, {model_name}Query, {model_name}Fields]"
+        + f"TypedCollection[{model_ref}, {model_name}Path, {model_name}Query, {model_name}Fields, {model_name}Update]"
         + "):\n"
     )
     stub_f.write(

@@ -151,3 +151,17 @@ def test_practical_query_example():
     assert age_filter["$lt"] == 65
     assert name_filter == "John"
     assert email_exists["$exists"] is True
+
+
+def test_agg_expr_op_accepts_known_operators():
+    """AggExprOp should accept known aggregation expression operator names."""
+    from typed_mongo.operators import AggExprOp
+
+    op: AggExprOp = "$add"
+    assert op == "$add"
+
+    op2: AggExprOp = "$concat"
+    assert op2 == "$concat"
+
+    op3: AggExprOp = "$cond"
+    assert op3 == "$cond"

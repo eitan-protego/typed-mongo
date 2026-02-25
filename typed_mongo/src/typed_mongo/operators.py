@@ -48,5 +48,24 @@ them using the combine_ops function.
 """
 
 
+# --- Aggregation expression operators (for pipeline updates) ---
+
+type AggExprOp = Literal[
+    "$add", "$subtract", "$multiply", "$divide", "$mod",
+    "$concat", "$substr", "$toLower", "$toUpper", "$trim",
+    "$cond", "$ifNull", "$switch",
+    "$arrayElemAt", "$first", "$last", "$size", "$filter", "$map",
+    "$mergeObjects", "$objectToArray", "$arrayToObject",
+    "$toString", "$toInt", "$toDouble", "$toBool",
+    "$type", "$literal",
+    "$dateToString", "$dateFromString",
+    "$abs", "$ceil", "$floor", "$round",
+    "$max", "$min", "$avg", "$sum",
+    "$and", "$or", "$not",
+    "$eq", "$ne", "$gt", "$gte", "$lt", "$lte",
+    "$in", "$setUnion", "$setIntersection",
+]
+
+
 def combine_ops[T](*ops: NontrivialOp[T]) -> Op[T]:
     return cast(Op[T], {k: v for op in ops for k, v in op.items()})

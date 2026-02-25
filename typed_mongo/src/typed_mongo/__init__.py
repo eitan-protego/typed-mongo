@@ -3,6 +3,7 @@
 from typed_mongo.collection import TypedCollection, TypedCursor
 from typed_mongo.model import MongoCollectionModel, clear_registry, get_registry
 from typed_mongo.operators import (
+    AggExprOp,
     ElemMatch,
     Eq,
     Exists,
@@ -18,6 +19,7 @@ from typed_mongo.operators import (
 )
 
 __all__ = [
+    "AggExprOp",
     "Eq",
     "Ne",
     "In",

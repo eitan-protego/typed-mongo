@@ -141,3 +141,65 @@ def _walk_with_types(
         for nested in nested_models:
             if nested not in seen:
                 _walk_with_types(nested, full_path, path_types, seen | {nested})
+
+
+def is_numeric_type(annotation: Any) -> bool:
+    """Check if annotation is or contains a numeric type (int or float).
+
+    Unwraps Optional, Annotated, TypeAliasType, and unions. Returns True
+    if any non-None member is int or float. Returns False for list[int]
+    (that's an array field, not a numeric field).
+    """
+    if isinstance(annotation, typing.TypeAliasType):
+        return is_numeric_type(annotation.__value__)
+
+    origin = get_origin(annotation)
+
+    if origin is typing.Annotated:
+        return is_numeric_type(get_args(annotation)[0])
+
+    # list[X] is an array field, not numeric
+    if origin is list:
+        return False
+
+    # Union: check if any non-None member is numeric
+    if origin is types.UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated]
+        return any(
+            is_numeric_type(arg)
+            for arg in get_args(annotation)
+            if arg is not type(None)
+        )
+
+    return annotation is int or annotation is float
+
+
+def extract_list_element_type(annotation: Any) -> Any | None:
+    """Extract element type T from list[T], or None if not a list type.
+
+    Unwraps Optional (list[T] | None -> T), Annotated, TypeAliasType.
+    """
+    if isinstance(annotation, typing.TypeAliasType):
+        return extract_list_element_type(annotation.__value__)
+
+    origin = get_origin(annotation)
+
+    if origin is typing.Annotated:
+        return extract_list_element_type(get_args(annotation)[0])
+
+    # Union: find the list member (e.g. list[str] | None)
+    if origin is types.UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated]
+        for arg in get_args(annotation):
+            if arg is type(None):
+                continue
+            result = extract_list_element_type(arg)
+            if result is not None:
+                return result
+        return None
+
+    if origin is list:
+        args = get_args(annotation)
+        if args:
+            return args[0]
+        return None
+
+    return None

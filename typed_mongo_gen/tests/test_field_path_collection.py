@@ -86,3 +86,50 @@ def test_optional_field_type():
     """Optional fields should preserve union type."""
     path_types = collect_field_path_types(_Root)
     assert path_types["score"] == float | None
+
+
+# --- is_numeric_type / extract_list_element_type tests ---
+
+from typed_mongo_gen.introspect import is_numeric_type, extract_list_element_type
+
+
+def test_is_numeric_type_int():
+    assert is_numeric_type(int) is True
+
+def test_is_numeric_type_float():
+    assert is_numeric_type(float) is True
+
+def test_is_numeric_type_optional_int():
+    assert is_numeric_type(int | None) is True
+
+def test_is_numeric_type_str():
+    assert is_numeric_type(str) is False
+
+def test_is_numeric_type_list_int():
+    """list[int] is NOT numeric — it's an array field."""
+    assert is_numeric_type(list[int]) is False
+
+def test_is_numeric_type_optional_float():
+    assert is_numeric_type(float | None) is True
+
+def test_is_numeric_type_union_str_int():
+    """str | int has a numeric member, so it's numeric."""
+    assert is_numeric_type(str | int) is True
+
+
+def test_extract_list_element_type_simple():
+    assert extract_list_element_type(list[str]) is str
+
+def test_extract_list_element_type_int():
+    assert extract_list_element_type(list[int]) is int
+
+def test_extract_list_element_type_not_list():
+    assert extract_list_element_type(str) is None
+
+def test_extract_list_element_type_optional_list():
+    """list[str] | None should still extract str."""
+    result = extract_list_element_type(list[str] | None)
+    assert result is str
+
+def test_extract_list_element_type_bare_list():
+    assert extract_list_element_type(list) is None

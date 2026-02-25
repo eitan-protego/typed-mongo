@@ -85,6 +85,19 @@ def test_end_to_end_generation(tmp_path: Path):
     assert '"name": Op[str],' in stub_content
     assert '"price": Op[float],' in stub_content
 
+    # Verify update types are generated
+    assert 'ProductUpdate = TypedDict("ProductUpdate"' in stub_content
+    assert 'ProductNumericFields = TypedDict("ProductNumericFields"' in stub_content
+    assert "type ProductRefPath = Literal[" in stub_content
+    assert '"$price",' in stub_content  # RefPath should have $-prefixed paths
+    assert '"$set": ProductFields,' in stub_content
+    assert '"$inc": ProductNumericFields,' in stub_content
+    assert "type ProductPipelineStage = " in stub_content
+
+    # Verify runtime has update type aliases
+    assert "ProductUpdate = dict[str, Any]" in runtime_content
+    assert "ProductNumericFields = dict[str, Any]" in runtime_content
+
     # Verify generated code compiles
     compile(stub_content, "<test>", "exec")
 

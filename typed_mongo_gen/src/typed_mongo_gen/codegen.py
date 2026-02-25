@@ -14,7 +14,12 @@ from typing import Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel
 
-from typed_mongo_gen.introspect import collect_field_path_types, collect_field_paths
+from typed_mongo_gen.introspect import (
+    collect_field_path_types,
+    collect_field_paths,
+    extract_list_element_type,
+    is_numeric_type,
+)
 
 _BUILTINS = frozenset({str, int, float, bool, list, dict, bytes, type(None)})
 
@@ -260,7 +265,11 @@ def _write_model(
     runtime_f.write(f"# {model_name}\n")
     runtime_f.write(f"type {model_name}Path = str\n")
     runtime_f.write(f"{model_name}Query = dict[str, Any]\n")
-    runtime_f.write(f"{model_name}Fields = dict[str, Any]\n\n")
+    runtime_f.write(f"{model_name}Fields = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}NumericFields = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}ArrayElementFields = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}ArrayPopFields = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}UnsetFields = dict[str, Any]\n\n")
     runtime_f.write(f"class {model_name}Collection(TypedCollection):\n")
     runtime_f.write(
         "    def __init__(self, db: AsyncDatabase[dict[str, Any]]) -> None:\n"
@@ -293,6 +302,46 @@ def _write_model(
     for path in sorted(path_types):
         type_src = _annotation_to_source(path_types[path], module_aliases)
         stub_f.write(f'    "{path}": {type_src},\n')
+    stub_f.write("}, total=False)\n\n")
+
+    # NumericFields TypedDict (only int/float fields)
+    numeric_paths = {p: t for p, t in path_types.items() if is_numeric_type(t)}
+    if numeric_paths:
+        stub_f.write(f'{model_name}NumericFields = TypedDict("{model_name}NumericFields", {{\n')
+        for path in sorted(numeric_paths):
+            stub_f.write(f'    "{path}": int | float,\n')
+        stub_f.write("}, total=False)\n\n")
+    else:
+        stub_f.write(f'{model_name}NumericFields = TypedDict("{model_name}NumericFields", {{}}, total=False)\n\n')
+
+    # ArrayElementFields TypedDict (only list fields -> element type)
+    array_paths: dict[str, str] = {}
+    for p, t in path_types.items():
+        elem = extract_list_element_type(t)
+        if elem is not None:
+            array_paths[p] = _annotation_to_source(elem, module_aliases)
+    if array_paths:
+        stub_f.write(f'{model_name}ArrayElementFields = TypedDict("{model_name}ArrayElementFields", {{\n')
+        for path in sorted(array_paths):
+            stub_f.write(f'    "{path}": {array_paths[path]},\n')
+        stub_f.write("}, total=False)\n\n")
+    else:
+        stub_f.write(f'{model_name}ArrayElementFields = TypedDict("{model_name}ArrayElementFields", {{}}, total=False)\n\n')
+
+    # ArrayPopFields TypedDict (only list fields -> Literal[1, -1])
+    array_field_paths = sorted(array_paths.keys())
+    if array_field_paths:
+        stub_f.write(f'{model_name}ArrayPopFields = TypedDict("{model_name}ArrayPopFields", {{\n')
+        for path in array_field_paths:
+            stub_f.write(f'    "{path}": Literal[1, -1],\n')
+        stub_f.write("}, total=False)\n\n")
+    else:
+        stub_f.write(f'{model_name}ArrayPopFields = TypedDict("{model_name}ArrayPopFields", {{}}, total=False)\n\n')
+
+    # UnsetFields TypedDict (all fields -> Literal[""])
+    stub_f.write(f'{model_name}UnsetFields = TypedDict("{model_name}UnsetFields", {{\n')
+    for path in sorted(path_types):
+        stub_f.write(f"    \"{path}\": Literal[''],\n")
     stub_f.write("}, total=False)\n\n")
 
     # Collection class — model ref may need aliasing if its module conflicts

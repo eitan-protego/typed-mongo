@@ -137,3 +137,86 @@ def test_union_with_list_expands_list_member(tmp_path: Path):
     content = stub_path.read_text()
     assert '"tags": Op[str | list[str] | None],' in content
     assert '"ids": Op[int | list[int] | str],' in content
+
+
+class _ModelWithMixedFields(BaseModel):
+    name: str
+    age: int | None = None
+    score: float = 0.0
+    tags: list[str] = []
+    active: bool = True
+
+
+def test_numeric_fields_typed_dict(tmp_path: Path):
+    """Stub should have NumericFields with only int/float fields."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert 'MixedNumericFields = TypedDict("MixedNumericFields"' in content
+    # Extract the NumericFields section
+    start = content.index("MixedNumericFields = TypedDict(")
+    numeric_section = content[start:content.index("total=False)", start) + len("total=False)")]
+    assert '"age": int | float,' in numeric_section
+    assert '"score": int | float,' in numeric_section
+    # name, tags, active should NOT be in NumericFields
+    assert '"name"' not in numeric_section
+    assert '"tags"' not in numeric_section
+    assert '"active"' not in numeric_section
+
+
+def test_array_element_fields_typed_dict(tmp_path: Path):
+    """Stub should have ArrayElementFields with only list fields, mapped to element type."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert 'MixedArrayElementFields = TypedDict("MixedArrayElementFields"' in content
+    # Extract the section between the assignment and the closing total=False)
+    start = content.index("MixedArrayElementFields = TypedDict(")
+    array_section = content[start:content.index("total=False)", start) + len("total=False)")]
+    assert '"tags": str,' in array_section
+
+
+def test_array_pop_fields_typed_dict(tmp_path: Path):
+    """Stub should have ArrayPopFields with list fields mapped to Literal[1, -1]."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert 'MixedArrayPopFields = TypedDict("MixedArrayPopFields"' in content
+    start = content.index("MixedArrayPopFields = TypedDict(")
+    pop_section = content[start:content.index("total=False)", start) + len("total=False)")]
+    assert '"tags": Literal[1, -1],' in pop_section
+
+
+def test_unset_fields_typed_dict(tmp_path: Path):
+    """Stub should have UnsetFields with all fields mapped to Literal['']."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert 'MixedUnsetFields = TypedDict("MixedUnsetFields"' in content
+    start = content.index("MixedUnsetFields = TypedDict(")
+    unset_section = content[start:content.index("total=False)", start) + len("total=False)")]
+    assert "\"name\": Literal['']," in unset_section
+    assert "\"age\": Literal['']," in unset_section
+    assert "\"score\": Literal['']," in unset_section
+    assert "\"tags\": Literal['']," in unset_section
+
+
+def test_runtime_has_new_type_aliases(tmp_path: Path):
+    """Runtime .py should have dict[str, Any] aliases for new types."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = runtime_path.read_text()
+    assert "MixedNumericFields = dict[str, Any]" in content
+    assert "MixedArrayElementFields = dict[str, Any]" in content
+    assert "MixedArrayPopFields = dict[str, Any]" in content
+    assert "MixedUnsetFields = dict[str, Any]" in content

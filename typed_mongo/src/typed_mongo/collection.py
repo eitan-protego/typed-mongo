@@ -148,19 +148,19 @@ class TypedCollection[
         """
         return document.model_dump()  # pyright: ignore[reportReturnType]
 
-    async def insert_one(self, document: M) -> InsertOneResult:
-        """Insert a document, serialized via ``model_dump()``."""
-        doc = document.model_dump()
+    async def insert_one(self, document: M | Model) -> InsertOneResult:
+        """Insert a document (model instance or dict)."""
+        doc: dict[str, Any] = document.model_dump() if isinstance(document, BaseModel) else document  # pyright: ignore[reportAssignmentType]
         return await self._collection.insert_one(doc)
 
     async def replace_one(
         self,
         filter: Query,
-        replacement: M,
+        replacement: M | Model,
         upsert: bool = False,
     ) -> UpdateResult:
-        """Replace a document, serialized via ``model_dump()``."""
-        doc = replacement.model_dump()
+        """Replace a document (model instance or dict)."""
+        doc: dict[str, Any] = replacement.model_dump() if isinstance(replacement, BaseModel) else replacement  # pyright: ignore[reportAssignmentType]
         return await self._collection.replace_one(filter, doc, upsert=upsert)
 
     async def update_one(

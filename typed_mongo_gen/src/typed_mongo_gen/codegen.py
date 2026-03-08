@@ -306,6 +306,7 @@ def _write_model(
     runtime_f.write(f"{model_name}Fields = dict[str, Any]\n")
     runtime_f.write(f"{model_name}NumericFields = dict[str, Any]\n")
     runtime_f.write(f"{model_name}ArrayElementFields = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}ArrayPushFields = dict[str, Any]\n")
     runtime_f.write(f"{model_name}ArrayPopFields = dict[str, Any]\n")
     runtime_f.write(f"{model_name}UnsetFields = dict[str, Any]\n")
     runtime_f.write(f"type {model_name}RefPath = str\n")
@@ -374,6 +375,13 @@ def _write_model(
     array_entries = [(p, array_paths[p]) for p in sorted(array_paths)]
     _write_typeddict(stub_f, f"{model_name}ArrayElementFields", array_entries, total=False)
 
+    # ArrayPushFields TypedDict (T | Mapping[Literal["$each"], list[T]] for $push/$addToSet)
+    push_entries = [
+        (p, f'{array_paths[p]} | Mapping[Literal["$each"], list[{array_paths[p]}]]')
+        for p in sorted(array_paths)
+    ]
+    _write_typeddict(stub_f, f"{model_name}ArrayPushFields", push_entries, total=False)
+
     # ArrayPopFields TypedDict (only list fields -> Literal[1, -1])
     pop_entries = [(p, "Literal[1, -1]") for p in sorted(array_paths)]
     _write_typeddict(stub_f, f"{model_name}ArrayPopFields", pop_entries, total=False)
@@ -403,9 +411,9 @@ def _write_model(
         ("$mul", f"{model_name}NumericFields"),
         ("$min", f"{model_name}Fields"),
         ("$max", f"{model_name}Fields"),
-        ("$push", f"{model_name}ArrayElementFields"),
+        ("$push", f"{model_name}ArrayPushFields"),
         ("$pull", f"{model_name}ArrayElementFields"),
-        ("$addToSet", f"{model_name}ArrayElementFields"),
+        ("$addToSet", f"{model_name}ArrayPushFields"),
         ("$pop", f"{model_name}ArrayPopFields"),
     ]
     _write_typeddict(stub_f, f"{model_name}Update", update_entries, total=False)

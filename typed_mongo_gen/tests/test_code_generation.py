@@ -205,6 +205,17 @@ def test_array_pop_fields_typed_dict(tmp_path: Path):
     assert "    tags: Literal[1, -1]" in content
 
 
+def test_array_push_fields_typed_dict(tmp_path: Path):
+    """Stub should have ArrayPushFields with T | Mapping[$each, list[T]] for $push/$addToSet."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert "class MixedArrayPushFields(TypedDict, total=False):" in content
+    assert '    tags: str | Mapping[Literal["$each"], list[str]]' in content
+
+
 def test_unset_fields_typed_dict(tmp_path: Path):
     """Stub should have UnsetFields with all fields mapped to Literal['']."""
     runtime_path = tmp_path / "out.py"
@@ -264,9 +275,9 @@ def test_update_typed_dict(tmp_path: Path):
     assert '"$mul": MixedNumericFields,' in update_section
     assert '"$min": MixedFields,' in update_section
     assert '"$max": MixedFields,' in update_section
-    assert '"$push": MixedArrayElementFields,' in update_section
+    assert '"$push": MixedArrayPushFields,' in update_section
     assert '"$pull": MixedArrayElementFields,' in update_section
-    assert '"$addToSet": MixedArrayElementFields,' in update_section
+    assert '"$addToSet": MixedArrayPushFields,' in update_section
     assert '"$pop": MixedArrayPopFields,' in update_section
 
 

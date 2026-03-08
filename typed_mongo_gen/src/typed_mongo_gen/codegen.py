@@ -302,6 +302,10 @@ def _write_model(
             query_val_src = _query_value_type_src(path_types[path], module_aliases)
             stub_f.write(f'    "{path}": Op[{query_val_src}],\n')
     stub_f.write('    "$expr": dict[str, Any],\n')
+    stub_f.write(f'    "$and": list["{model_name}Query"],\n')
+    stub_f.write(f'    "$or": list["{model_name}Query"],\n')
+    stub_f.write(f'    "$nor": list["{model_name}Query"],\n')
+    stub_f.write(f'    "$not": "{model_name}Query",\n')
     stub_f.write("}, total=False)\n\n")
 
     # Fields TypedDict (exact types)

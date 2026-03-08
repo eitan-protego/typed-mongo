@@ -75,6 +75,20 @@ def test_stub_file_includes_fields_typed_dict(tmp_path: Path):
     assert '"age": int | None,' in content
 
 
+def test_query_has_logical_operators(tmp_path: Path):
+    """Query TypedDict should have $and, $or, $nor, $not with recursive typing."""
+    runtime_path = tmp_path / "test_types.py"
+    stub_path = tmp_path / "test_types.pyi"
+
+    write_field_paths(runtime_path, stub_path, {"TestModel": _TestModel})
+
+    content = stub_path.read_text()
+    assert '"$and": list["TestModelQuery"],' in content
+    assert '"$or": list["TestModelQuery"],' in content
+    assert '"$nor": list["TestModelQuery"],' in content
+    assert '"$not": "TestModelQuery",' in content
+
+
 def test_generated_code_compiles(tmp_path: Path):
     """Generated stub file should be valid Python."""
     runtime_path = tmp_path / "test_types.py"

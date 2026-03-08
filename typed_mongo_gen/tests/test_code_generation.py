@@ -301,15 +301,35 @@ def test_pipeline_stage_union(tmp_path: Path):
     assert 'MixedPipelineUnset = TypedDict("MixedPipelineUnset"' in content
 
 
-def test_collection_stub_has_five_type_params(tmp_path: Path):
-    """Generated Collection stub should use all 5 type params including Update."""
+def test_collection_stub_has_six_type_params(tmp_path: Path):
+    """Generated Collection stub should use all 6 type params including Model and Update."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    expected = "TypedCollection[_ModelWithMixedFields, MixedPath, MixedQuery, MixedFields, MixedUpdate]"
+    expected = "TypedCollection[_ModelWithMixedFields, MixedModel, MixedPath, MixedQuery, MixedFields, MixedUpdate]"
     assert expected in content
+
+
+def test_model_typed_dict(tmp_path: Path):
+    """Stub should have Model TypedDict with top-level fields only."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert 'MixedModel = TypedDict("MixedModel"' in content
+    model_start = content.index('MixedModel = TypedDict("MixedModel"')
+    model_end = content.index("})", model_start)
+    model_section = content[model_start:model_end]
+    assert '"name": str,' in model_section
+    assert '"age": int | None,' in model_section
+    assert '"score": float,' in model_section
+    assert '"tags": list[str],' in model_section
+    assert '"active": bool,' in model_section
+    # Should NOT have total=False (model_dump returns all fields)
+    assert "total=False" not in content[model_start:model_end + 10]
 
 
 def test_generated_update_code_compiles(tmp_path: Path):

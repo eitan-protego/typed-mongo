@@ -1,11 +1,12 @@
 """Type-safe wrapper around pymongo's AsyncCollection.
 
-TypedCollection[M, Path, Query, Fields, Update] provides typed method
+TypedCollection[M, Model, Path, Query, Fields, Update] provides typed method
 signatures that use generated types instead of ``dict[str, Any]``, catching
 field path typos and wrong update value types at type-check time.
 
 Type parameters:
     M: MongoCollectionModel subclass
+    Model: TypedDict matching ``model_dump()`` output shape
     Path: Literal path type (e.g. ``UserPath``) for single-field args like distinct
     Query: Query TypedDict (e.g. ``UserQuery``) for filter args
     Fields: Fields TypedDict (e.g. ``UserFields``) for $set value args
@@ -70,6 +71,7 @@ class TypedCursor[M: BaseModel]:
 
 class TypedCollection[
     M: MongoCollectionModel,
+    Model: Mapping[str, Any],
     Path: str,
     Query: Mapping[str, Any],
     Fields: Mapping[str, Any],
@@ -77,12 +79,13 @@ class TypedCollection[
 ]:
     """Type-safe wrapper around ``AsyncCollection``.
 
-    Method signatures use generated types (M, Path, Query, Fields, Update)
-    instead of ``dict[str, Any]``, so that field path typos and wrong
-    update value types are caught at type-check time.
+    Method signatures use generated types instead of ``dict[str, Any]``,
+    so that field path typos and wrong update value types are caught at
+    type-check time.
 
     Type parameters:
         M: MongoCollectionModel subclass
+        Model: TypedDict matching ``model_dump()`` output shape
         Path: Literal path type (e.g. ``UserPath``) for single-field args
         Query: Query TypedDict (e.g. ``UserQuery``) for filter args
         Fields: Fields TypedDict (e.g. ``UserFields``) for $set value args
@@ -100,7 +103,7 @@ class TypedCollection[
     @classmethod
     def from_database(
         cls, model: type[M], db: AsyncDatabase[dict[str, Any]]
-    ) -> TypedCollection[M, Any, Any, Any, Any]:
+    ) -> TypedCollection[M, Any, Any, Any, Any, Any]:
         """Factory: create a TypedCollection from a database and model class."""
         collection = model.get_collection(db)
         return cls(model, collection)
@@ -136,6 +139,14 @@ class TypedCollection[
         return [self._model.model_validate(doc) for doc in docs]
 
     # --- Write operations ---
+
+    def dump(self, document: M) -> Model:
+        """Type-safe wrapper around ``model_dump()``.
+
+        Returns the document as a dict typed with the generated Model TypedDict,
+        giving type-safe access to the serialized field names and values.
+        """
+        return document.model_dump()  # pyright: ignore[reportReturnType]
 
     async def insert_one(self, document: M) -> InsertOneResult:
         """Insert a document, serialized via ``model_dump()``."""

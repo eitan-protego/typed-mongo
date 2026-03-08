@@ -265,6 +265,7 @@ def _write_model(
     # Runtime: simple aliases + Collection class
     runtime_f.write(f"# {model_name}\n")
     runtime_f.write(f"type {model_name}Path = str\n")
+    runtime_f.write(f"{model_name}Model = dict[str, Any]\n")
     runtime_f.write(f"{model_name}Query = dict[str, Any]\n")
     runtime_f.write(f"{model_name}Fields = dict[str, Any]\n")
     runtime_f.write(f"{model_name}NumericFields = dict[str, Any]\n")
@@ -291,6 +292,14 @@ def _write_model(
     for path in paths:
         stub_f.write(f'    "{path}",\n')
     stub_f.write("]\n\n")
+
+    # Model TypedDict (top-level fields only, total=True — matches model_dump() output)
+    stub_f.write(f'{model_name}Model = TypedDict("{model_name}Model", {{\n')
+    for path in sorted(path_types):
+        if "." not in path:
+            type_src = _annotation_to_source(path_types[path], module_aliases)
+            stub_f.write(f'    "{path}": {type_src},\n')
+    stub_f.write("})\n\n")
 
     # Query TypedDict (with Op[T]; list[T] fields use Op[T | list[T]])
     stub_f.write(f'{model_name}Query = TypedDict("{model_name}Query", {{\n')
@@ -397,7 +406,7 @@ def _write_model(
     model_ref = _annotation_to_source(model, module_aliases)
     stub_f.write(
         f"class {model_name}Collection("
-        + f"TypedCollection[{model_ref}, {model_name}Path, {model_name}Query, {model_name}Fields, {model_name}Update]"
+        + f"TypedCollection[{model_ref}, {model_name}Model, {model_name}Path, {model_name}Query, {model_name}Fields, {model_name}Update]"
         + "):\n"
     )
     stub_f.write(

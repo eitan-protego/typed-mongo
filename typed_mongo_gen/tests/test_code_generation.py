@@ -69,10 +69,11 @@ def test_stub_file_includes_fields_typed_dict(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"TestModel": _TestModel})
 
     content = stub_path.read_text()
-    assert 'TestModelFields = TypedDict("TestModelFields"' in content
-    assert '"_id": str,' in content
-    assert '"name": str,' in content
-    assert '"age": int | None,' in content
+    # _id, name, age are all valid identifiers -> class syntax
+    assert "class TestModelFields(TypedDict, total=False):" in content
+    assert "    _id: str" in content
+    assert "    name: str" in content
+    assert "    age: int | None" in content
 
 
 def test_query_has_logical_operators(tmp_path: Path):
@@ -168,16 +169,18 @@ def test_numeric_fields_typed_dict(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert 'MixedNumericFields = TypedDict("MixedNumericFields"' in content
-    # Extract the NumericFields section
-    start = content.index("MixedNumericFields = TypedDict(")
-    numeric_section = content[start:content.index("total=False)", start) + len("total=False)")]
-    assert '"age": int | float,' in numeric_section
-    assert '"score": int | float,' in numeric_section
+    # age, score are valid identifiers -> class syntax
+    assert "class MixedNumericFields(TypedDict, total=False):" in content
+    start = content.index("class MixedNumericFields(")
+    # Find end of class (next blank line or next class/type definition)
+    end = content.index("\n\n", start)
+    numeric_section = content[start:end]
+    assert "    age: int | float" in numeric_section
+    assert "    score: int | float" in numeric_section
     # name, tags, active should NOT be in NumericFields
-    assert '"name"' not in numeric_section
-    assert '"tags"' not in numeric_section
-    assert '"active"' not in numeric_section
+    assert "name" not in numeric_section.split(":", 1)[1]  # after the class declaration
+    assert "tags" not in numeric_section
+    assert "active" not in numeric_section
 
 
 def test_array_element_fields_typed_dict(tmp_path: Path):
@@ -187,11 +190,8 @@ def test_array_element_fields_typed_dict(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert 'MixedArrayElementFields = TypedDict("MixedArrayElementFields"' in content
-    # Extract the section between the assignment and the closing total=False)
-    start = content.index("MixedArrayElementFields = TypedDict(")
-    array_section = content[start:content.index("total=False)", start) + len("total=False)")]
-    assert '"tags": str,' in array_section
+    assert "class MixedArrayElementFields(TypedDict, total=False):" in content
+    assert "    tags: str" in content
 
 
 def test_array_pop_fields_typed_dict(tmp_path: Path):
@@ -201,10 +201,8 @@ def test_array_pop_fields_typed_dict(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert 'MixedArrayPopFields = TypedDict("MixedArrayPopFields"' in content
-    start = content.index("MixedArrayPopFields = TypedDict(")
-    pop_section = content[start:content.index("total=False)", start) + len("total=False)")]
-    assert '"tags": Literal[1, -1],' in pop_section
+    assert "class MixedArrayPopFields(TypedDict, total=False):" in content
+    assert "    tags: Literal[1, -1]" in content
 
 
 def test_unset_fields_typed_dict(tmp_path: Path):
@@ -214,13 +212,11 @@ def test_unset_fields_typed_dict(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert 'MixedUnsetFields = TypedDict("MixedUnsetFields"' in content
-    start = content.index("MixedUnsetFields = TypedDict(")
-    unset_section = content[start:content.index("total=False)", start) + len("total=False)")]
-    assert "\"name\": Literal['']," in unset_section
-    assert "\"age\": Literal['']," in unset_section
-    assert "\"score\": Literal['']," in unset_section
-    assert "\"tags\": Literal['']," in unset_section
+    assert "class MixedUnsetFields(TypedDict, total=False):" in content
+    assert "    name: Literal['']" in content
+    assert "    age: Literal['']" in content
+    assert "    score: Literal['']" in content
+    assert "    tags: Literal['']" in content
 
 
 def test_runtime_has_new_type_aliases(tmp_path: Path):
@@ -251,14 +247,14 @@ def test_ref_path_literal_type(tmp_path: Path):
 
 
 def test_update_typed_dict(tmp_path: Path):
-    """Stub should have Update TypedDict with all operator keys."""
+    """Stub should have Update TypedDict with all operator keys (function-call syntax due to $ keys)."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
+    # $ keys -> function-call syntax
     assert 'MixedUpdate = TypedDict("MixedUpdate"' in content
-    # Find the Update section
     update_start = content.index('MixedUpdate = TypedDict("MixedUpdate"')
     update_end = content.index("total=False)", update_start)
     update_section = content[update_start:update_end]
@@ -281,12 +277,10 @@ def test_pipeline_set_fields_typed_dict(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert 'MixedPipelineSetFields = TypedDict("MixedPipelineSetFields"' in content
-    ps_start = content.index('MixedPipelineSetFields = TypedDict(')
-    ps_end = content.index("total=False)", ps_start)
-    ps_section = content[ps_start:ps_end]
-    assert '"name": str | MixedRefPath | Mapping[AggExprOp, Any],' in ps_section
-    assert '"score": float | MixedRefPath | Mapping[AggExprOp, Any],' in ps_section
+    # All keys are valid identifiers -> class syntax
+    assert "class MixedPipelineSetFields(TypedDict, total=False):" in content
+    assert "    name: str | MixedRefPath | Mapping[AggExprOp, Any]" in content
+    assert "    score: float | MixedRefPath | Mapping[AggExprOp, Any]" in content
 
 
 def test_pipeline_stage_union(tmp_path: Path):
@@ -297,6 +291,7 @@ def test_pipeline_stage_union(tmp_path: Path):
 
     content = stub_path.read_text()
     assert "type MixedPipelineStage = MixedPipelineSet | MixedPipelineUnset" in content
+    # $ keys -> function-call syntax
     assert 'MixedPipelineSet = TypedDict("MixedPipelineSet"' in content
     assert 'MixedPipelineUnset = TypedDict("MixedPipelineUnset"' in content
 
@@ -319,17 +314,43 @@ def test_model_typed_dict(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert 'MixedModel = TypedDict("MixedModel"' in content
-    model_start = content.index('MixedModel = TypedDict("MixedModel"')
-    model_end = content.index("})", model_start)
+    # All keys are valid identifiers, total=True -> class syntax without total kwarg
+    assert "class MixedModel(TypedDict):" in content
+    model_start = content.index("class MixedModel(TypedDict):")
+    model_end = content.index("\n\n", model_start)
     model_section = content[model_start:model_end]
-    assert '"name": str,' in model_section
-    assert '"age": int | None,' in model_section
-    assert '"score": float,' in model_section
-    assert '"tags": list[str],' in model_section
-    assert '"active": bool,' in model_section
+    assert "    name: str" in model_section
+    assert "    age: int | None" in model_section
+    assert "    score: float" in model_section
+    assert "    tags: list[str]" in model_section
+    assert "    active: bool" in model_section
     # Should NOT have total=False (model_dump returns all fields)
-    assert "total=False" not in content[model_start:model_end + 10]
+    assert "total=False" not in model_section
+
+
+def test_class_syntax_vs_function_call_syntax(tmp_path: Path):
+    """TypedDicts with valid identifier keys use class syntax; others use function-call."""
+
+    class _Nested(BaseModel):
+        x: int
+
+    class _Parent(BaseModel):
+        name: str
+        child: _Nested
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Parent": _Parent})
+
+    content = stub_path.read_text()
+    # Model has only top-level fields (name, child) -> class syntax
+    assert "class ParentModel(TypedDict):" in content
+    # Fields has dot-path keys (child.x) -> function-call syntax
+    assert 'ParentFields = TypedDict("ParentFields"' in content
+    # Query always has $ keys -> function-call syntax
+    assert 'ParentQuery = TypedDict("ParentQuery"' in content
+    # Update always has $ keys -> function-call syntax
+    assert 'ParentUpdate = TypedDict("ParentUpdate"' in content
 
 
 def test_generated_update_code_compiles(tmp_path: Path):

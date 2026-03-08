@@ -87,7 +87,7 @@ def test_end_to_end_generation(tmp_path: Path):
 
     # Verify update types are generated
     assert 'ProductUpdate = TypedDict("ProductUpdate"' in stub_content
-    assert 'ProductNumericFields = TypedDict("ProductNumericFields"' in stub_content
+    assert "class ProductNumericFields(TypedDict, total=False):" in stub_content
     assert "type ProductRefPath = Literal[" in stub_content
     assert '"$price",' in stub_content  # RefPath should have $-prefixed paths
     assert '"$set": ProductFields,' in stub_content

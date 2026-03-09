@@ -276,6 +276,7 @@ Do not edit manually. Regenerate with:
     # Runtime: minimal header — TypedCollection + direct model class imports
     runtime_f.write(header)
     runtime_f.write("from typing import Any\n")
+    runtime_f.write("from pydantic import BaseModel\n")
     runtime_f.write("from pymongo.asynchronous.database import AsyncDatabase\n")
     runtime_f.write("from typed_mongo import TypedCollection\n")
     for module in sorted(model_imports):
@@ -289,7 +290,7 @@ Do not edit manually. Regenerate with:
 
     # typing imports (always direct)
     typing_names = {n for m, n in all_imports if m == "typing"}
-    typing_names |= {"Literal", "TypedDict", "Any"}
+    typing_names |= {"Literal", "TypedDict", "Any", "overload"}
     stub_f.write(f"from typing import {', '.join(sorted(typing_names))}\n")
 
     # Direct from-imports for non-conflicting user modules
@@ -480,6 +481,26 @@ def _write_model(
     )
 
 
+def _write_typed_dump(
+    runtime_f: typing.TextIO,
+    stub_f: typing.TextIO,
+    models: Mapping[str, type[BaseModel]],
+    model_dict_names: dict[type, str],
+    module_aliases: dict[str, str],
+) -> None:
+    """Write the typed_dump() overloaded function to both files."""
+    # Runtime: simple implementation that calls model_dump()
+    runtime_f.write("def typed_dump(model: BaseModel) -> dict[str, Any]:\n")
+    runtime_f.write("    return model.model_dump()\n")
+
+    # Stub: @overload for each top-level model + each nested model
+    for model_cls, dict_name in model_dict_names.items():
+        model_ref = _annotation_to_source(model_cls, module_aliases)
+        stub_f.write("@overload\n")
+        stub_f.write(f"def typed_dump(model: {model_ref}) -> {dict_name}: ...\n")
+    stub_f.write("\n")
+
+
 def _collect_all_nested_models(
     models: Mapping[str, type[BaseModel]],
 ) -> dict[type[BaseModel], str]:
@@ -586,3 +607,8 @@ def write_field_paths(
                     runtime_f, stub_f, name, model_cls,
                     model_path_types[name], module_aliases, model_dict_names,
                 )
+
+        # Emit typed_dump() function
+        _write_typed_dump(
+            runtime_f, stub_f, models, model_dict_names, module_aliases,
+        )

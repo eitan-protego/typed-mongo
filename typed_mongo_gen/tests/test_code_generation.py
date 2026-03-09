@@ -459,6 +459,47 @@ def test_transitive_nested_models(tmp_path: Path):
     compile(content, "<test>", "exec")
 
 
+def test_typed_dump_runtime(tmp_path: Path):
+    """Runtime .py should have typed_dump function."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = runtime_path.read_text()
+    assert "def typed_dump(model: BaseModel) -> dict[str, Any]:" in content
+    assert "return model.model_dump()" in content
+
+
+def test_typed_dump_stub_overloads(tmp_path: Path):
+    """Stub .pyi should have @overload signatures for typed_dump."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert "@overload\ndef typed_dump(model: _ModelWithMixedFields) -> MixedDict: ..." in content
+
+
+def test_typed_dump_with_nested_models(tmp_path: Path):
+    """typed_dump should have overloads for nested models too."""
+
+    class _Inner(BaseModel):
+        x: int
+
+    class _Outer(BaseModel):
+        child: _Inner
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Outer": _Outer})
+
+    content = stub_path.read_text()
+    # Overload for the top-level model
+    assert "@overload\ndef typed_dump(model: _Outer) -> OuterDict: ..." in content
+    # Overload for the nested model
+    assert "@overload\ndef typed_dump(model: _Inner) -> _InnerDict: ..." in content
+
+
 def test_generated_update_code_compiles(tmp_path: Path):
     """Generated stub with all update types should compile."""
     runtime_path = tmp_path / "out.py"

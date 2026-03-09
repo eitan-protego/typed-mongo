@@ -270,6 +270,7 @@ def test_update_typed_dict(tmp_path: Path):
     update_end = content.index("total=False)", update_start)
     update_section = content[update_start:update_end]
     assert '"$set": MixedFields,' in update_section
+    assert '"$setOnInsert": MixedFields,' in update_section
     assert '"$unset": MixedUnsetFields,' in update_section
     assert '"$inc": MixedNumericFields,' in update_section
     assert '"$mul": MixedNumericFields,' in update_section

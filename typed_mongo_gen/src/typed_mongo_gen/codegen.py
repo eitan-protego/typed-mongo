@@ -451,6 +451,7 @@ def _write_model(
     # Update TypedDict (unified update document)
     update_entries = [
         ("$set", f"{model_name}Fields"),
+        ("$setOnInsert", f"{model_name}Fields"),
         ("$unset", f"{model_name}UnsetFields"),
         ("$inc", f"{model_name}NumericFields"),
         ("$mul", f"{model_name}NumericFields"),

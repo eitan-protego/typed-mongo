@@ -217,17 +217,17 @@ def test_array_push_fields_typed_dict(tmp_path: Path):
 
 
 def test_unset_fields_typed_dict(tmp_path: Path):
-    """Stub should have UnsetFields with all fields mapped to Literal['']."""
+    """Stub should have UnsetFields with all fields mapped to Literal[""]."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
     assert "class MixedUnsetFields(TypedDict, total=False):" in content
-    assert "    name: Literal['']" in content
-    assert "    age: Literal['']" in content
-    assert "    score: Literal['']" in content
-    assert "    tags: Literal['']" in content
+    assert '    name: Literal[""]' in content
+    assert '    age: Literal[""]' in content
+    assert '    score: Literal[""]' in content
+    assert '    tags: Literal[""]' in content
 
 
 def test_runtime_has_new_type_aliases(tmp_path: Path):
@@ -314,7 +314,7 @@ def test_collection_stub_has_six_type_params(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    expected = "TypedCollection[_ModelWithMixedFields, MixedModel, MixedPath, MixedQuery, MixedFields, MixedUpdate]"
+    expected = "TypedCollection[_ModelWithMixedFields, MixedDict, MixedPath, MixedQuery, MixedFields, MixedUpdate]"
     assert expected in content
 
 
@@ -326,8 +326,8 @@ def test_model_typed_dict(tmp_path: Path):
 
     content = stub_path.read_text()
     # All keys are valid identifiers, total=True -> class syntax without total kwarg
-    assert "class MixedModel(TypedDict):" in content
-    model_start = content.index("class MixedModel(TypedDict):")
+    assert "class MixedDict(TypedDict):" in content
+    model_start = content.index("class MixedDict(TypedDict):")
     model_end = content.index("\n\n", model_start)
     model_section = content[model_start:model_end]
     assert "    name: str" in model_section
@@ -355,13 +355,108 @@ def test_class_syntax_vs_function_call_syntax(tmp_path: Path):
 
     content = stub_path.read_text()
     # Model has only top-level fields (name, child) -> class syntax
-    assert "class ParentModel(TypedDict):" in content
+    assert "class ParentDict(TypedDict):" in content
     # Fields has dot-path keys (child.x) -> function-call syntax
     assert 'ParentFields = TypedDict("ParentFields"' in content
     # Query always has $ keys -> function-call syntax
     assert 'ParentQuery = TypedDict("ParentQuery"' in content
     # Update always has $ keys -> function-call syntax
     assert 'ParentUpdate = TypedDict("ParentUpdate"' in content
+
+
+def test_nested_model_generates_dict_typeddict(tmp_path: Path):
+    """Nested BaseModel fields should generate Dict TypedDicts instead of importing the class."""
+
+    class _Address(BaseModel):
+        street: str
+        city: str
+
+    class _Person(BaseModel):
+        name: str
+        address: _Address
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Person": _Person})
+
+    content = stub_path.read_text()
+    # Should generate _AddressDict TypedDict
+    assert "class _AddressDict(TypedDict):" in content
+    assert "    street: str" in content
+    assert "    city: str" in content
+    # PersonDict should reference _AddressDict, not _Address
+    assert "address: _AddressDict" in content
+    assert "from" not in content or "_Address," not in content
+    # Should NOT import _Address
+    assert "import _Address" not in content
+
+
+def test_nested_model_in_list_generates_dict(tmp_path: Path):
+    """list[Model] fields should use the generated Dict type."""
+
+    class _Tag(BaseModel):
+        label: str
+
+    class _Item(BaseModel):
+        tags: list[_Tag]
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Item": _Item})
+
+    content = stub_path.read_text()
+    assert "class _TagDict(TypedDict):" in content
+    assert "tags: list[_TagDict]" in content
+
+
+def test_nested_model_in_optional_generates_dict(tmp_path: Path):
+    """Optional[Model] fields should use the generated Dict type."""
+
+    class _Meta(BaseModel):
+        key: str
+
+    class _Doc(BaseModel):
+        meta: _Meta | None = None
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Doc": _Doc})
+
+    content = stub_path.read_text()
+    assert "class _MetaDict(TypedDict):" in content
+    assert "meta: _MetaDict | None" in content
+
+
+def test_transitive_nested_models(tmp_path: Path):
+    """Transitively nested models should all get Dict TypedDicts in dependency order."""
+
+    class _Inner(BaseModel):
+        value: int
+
+    class _Middle(BaseModel):
+        inner: _Inner
+
+    class _Outer(BaseModel):
+        middle: _Middle
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Outer": _Outer})
+
+    content = stub_path.read_text()
+    # Both nested models should have Dict TypedDicts
+    assert "class _InnerDict(TypedDict):" in content
+    assert "class _MiddleDict(TypedDict):" in content
+    # _MiddleDict should reference _InnerDict
+    assert "inner: _InnerDict" in content
+    # _OuterDict should reference _MiddleDict
+    assert "middle: _MiddleDict" in content
+    # _InnerDict should come before _MiddleDict (dependency order)
+    inner_pos = content.index("_InnerDict")
+    middle_pos = content.index("_MiddleDict")
+    assert inner_pos < middle_pos
+    # Should compile
+    compile(content, "<test>", "exec")
 
 
 def test_generated_update_code_compiles(tmp_path: Path):

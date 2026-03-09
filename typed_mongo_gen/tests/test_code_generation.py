@@ -386,9 +386,8 @@ def test_nested_model_generates_dict_typeddict(tmp_path: Path):
     assert "    city: str" in content
     # PersonDict should reference _AddressDict, not _Address
     assert "address: _AddressDict" in content
-    assert "from" not in content or "_Address," not in content
-    # Should NOT import _Address
-    assert "import _Address" not in content
+    # _Address is still imported (for typed_dump overloads), but not used in field types
+    assert "address: _Address\n" not in content
 
 
 def test_nested_model_in_list_generates_dict(tmp_path: Path):

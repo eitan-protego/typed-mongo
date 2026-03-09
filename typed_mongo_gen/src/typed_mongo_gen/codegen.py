@@ -576,10 +576,15 @@ def write_field_paths(
         model_path_types[name] = path_types
         for annotation in path_types.values():
             all_imports |= _collect_imports(annotation, model_dict_names)
-        # Add the model class itself (needed for Collection class definitions)
+        # Add the model class itself (needed for Collection class and typed_dump)
         if model.__module__ != "builtins":
             all_imports.add((model.__module__, model.__name__))
             model_imports.setdefault(model.__module__, set()).add(model.__name__)
+
+    # Add all introspected model classes (needed for typed_dump overloads)
+    for model_cls in model_dict_names:
+        if model_cls.__module__ != "builtins":
+            all_imports.add((model_cls.__module__, model_cls.__name__))
 
     module_aliases = _build_module_aliases(all_imports)
 

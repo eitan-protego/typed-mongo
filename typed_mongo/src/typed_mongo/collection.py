@@ -140,14 +140,6 @@ class TypedCollection[
 
     # --- Write operations ---
 
-    def dump(self, document: M) -> Model:
-        """Type-safe wrapper around ``model_dump()``.
-
-        Returns the document as a dict typed with the generated Model TypedDict,
-        giving type-safe access to the serialized field names and values.
-        """
-        return document.model_dump()  # pyright: ignore[reportReturnType]
-
     async def insert_one(self, document: M | Model) -> InsertOneResult:
         """Insert a document (model instance or dict)."""
         doc: dict[str, Any] = document.model_dump() if isinstance(document, BaseModel) else document  # pyright: ignore[reportAssignmentType]

@@ -7,7 +7,7 @@ name = "typed-mongo-gen"
 version = "0.1.0"
 description = "Generate type-safe MongoDB field path types from Pydantic models"
 requires-python = ">=3.12"
-dependencies = ["typed-mongo", "pydantic>=2.0", "cyclopts>=2.0"]
+dependencies = ["typed-mongo", "pydantic>=2.0", "cyclopts>=2.0", "typing_extensions>=4.10"]
 
 [tool.uv.sources]
 typed-mongo = { workspace = true }

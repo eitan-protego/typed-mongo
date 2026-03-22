@@ -122,8 +122,8 @@ async def aggregate(
     full_pipeline: list[dict[str, Any]] = list(pipeline)  # type: ignore
     if type_unsafe_pipeline_suffix:
         full_pipeline.extend(type_unsafe_pipeline_suffix)  # type: ignore
-        return self._collection.aggregate(full_pipeline)
-    return TypedCursor(self._model, self._collection.aggregate(full_pipeline))
+        return await self._collection.aggregate(full_pipeline)
+    return TypedCursor(self._model, await self._collection.aggregate(full_pipeline))
 ```
 
 `from_database` return type annotation updated to include 7th `Any`:

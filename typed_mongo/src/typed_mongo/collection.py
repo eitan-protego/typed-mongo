@@ -16,7 +16,7 @@ Type parameters:
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, overload
 
 from pydantic import BaseModel
 from pymongo.asynchronous.collection import AsyncCollection
@@ -25,6 +25,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.results import DeleteResult, InsertOneResult, UpdateResult
 
 from typed_mongo.model import MongoCollectionModel
+from typed_mongo.operators import AggregationStep
 
 
 class TypedCursor[M: BaseModel]:
@@ -76,6 +77,7 @@ class TypedCollection[
     Query: Mapping[str, Any],
     Fields: Mapping[str, Any],
     Update: Mapping[str, Any],
+    PipelineStage: Mapping[str, Any],
 ]:
     """Type-safe wrapper around ``AsyncCollection``.
 
@@ -90,6 +92,7 @@ class TypedCollection[
         Query: Query TypedDict (e.g. ``UserQuery``) for filter args
         Fields: Fields TypedDict (e.g. ``UserFields``) for $set value args
         Update: Update TypedDict (e.g. ``UserUpdate``) for update documents
+        PipelineStage: Pipeline stage TypedDict union for type-safe aggregation
     """
 
     def __init__(
@@ -103,7 +106,7 @@ class TypedCollection[
     @classmethod
     def from_database(
         cls, model: type[M], db: AsyncDatabase[dict[str, Any]]
-    ) -> TypedCollection[M, Any, Any, Any, Any, Any]:
+    ) -> TypedCollection[M, Any, Any, Any, Any, Any, Any]:
         """Factory: create a TypedCollection from a database and model class."""
         collection = model.get_collection(db)
         return cls(model, collection)
@@ -132,11 +135,32 @@ class TypedCollection[
         """Get distinct values for a field."""
         return await self._collection.distinct(key, filter=filter)
 
-    async def aggregate(self, pipeline: list[dict[str, Any]]) -> list[M]:
-        """Run an aggregation pipeline and validate results as models."""
-        cursor = await self._collection.aggregate(pipeline)
-        docs = await cursor.to_list()
-        return [self._model.model_validate(doc) for doc in docs]
+    @overload
+    async def aggregate(self, pipeline: list[PipelineStage]) -> TypedCursor[M]: ...
+
+    @overload
+    async def aggregate(
+        self,
+        pipeline: list[PipelineStage],
+        type_unsafe_pipeline_suffix: list[AggregationStep],
+    ) -> AsyncCursor[dict[str, Any]]: ...
+
+    async def aggregate(
+        self,
+        pipeline: list[PipelineStage],
+        type_unsafe_pipeline_suffix: list[AggregationStep] | None = None,
+    ) -> TypedCursor[M] | AsyncCursor[dict[str, Any]]:
+        """Run an aggregation pipeline.
+
+        With only safe pipeline stages, returns TypedCursor[M] that validates
+        results as model instances. With type_unsafe_pipeline_suffix, returns
+        a raw AsyncCursor since the output shape is unknown.
+        """
+        full_pipeline: list[dict[str, Any]] = list(pipeline)  # pyright: ignore[reportAssignmentType]
+        if type_unsafe_pipeline_suffix:
+            full_pipeline.extend(type_unsafe_pipeline_suffix)  # pyright: ignore[reportAssignmentType]
+            return await self._collection.aggregate(full_pipeline)
+        return TypedCursor(self._model, await self._collection.aggregate(full_pipeline))
 
     # --- Write operations ---
 

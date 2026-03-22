@@ -168,16 +168,17 @@ def test_agg_expr_op_accepts_known_operators():
     assert op3 == "$cond"
 
 
-def test_typed_collection_has_six_type_params():
-    """TypedCollection should accept M, Model, Path, Query, Fields, Update params."""
+def test_typed_collection_has_seven_type_params():
+    """TypedCollection should accept M, Model, Path, Query, Fields, Update, PipelineStage params."""
     params = TypedCollection.__type_params__
-    assert len(params) == 6
+    assert len(params) == 7
     assert params[0].__name__ == "M"
     assert params[1].__name__ == "Model"
     assert params[2].__name__ == "Path"
     assert params[3].__name__ == "Query"
     assert params[4].__name__ == "Fields"
     assert params[5].__name__ == "Update"
+    assert params[6].__name__ == "PipelineStage"
 
 
 def test_typed_collection_no_set_fields():

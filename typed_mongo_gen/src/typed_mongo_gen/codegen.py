@@ -38,29 +38,38 @@ def _write_typeddict(
     entries: list[tuple[str, str]],
     *,
     total: bool = True,
+    closed: bool = False,
+    extra_items: str | None = None,
 ) -> None:
     """Write a TypedDict using class syntax if possible, else function-call syntax."""
     keys = [k for k, _ in entries]
+
+    # Build extra keyword args string
+    extra_kwargs = ""
+    if not total:
+        extra_kwargs += ", total=False"
+    if closed:
+        extra_kwargs += ", closed=True"
+    if extra_items is not None:
+        extra_kwargs += f", extra_items={extra_items}"
+
     if not entries:
         # Empty TypedDict — always use function-call syntax
-        total_arg = ", total=False" if not total else ""
-        f.write(f'{name} = TypedDict("{name}", {{}}{total_arg})\n\n')
+        f.write(f'{name} = TypedDict("{name}", {{}}{extra_kwargs})\n\n')
         return
 
     if _all_valid_identifiers(keys):
         # Class syntax
-        total_arg = "" if total else ", total=False"
-        f.write(f"class {name}(TypedDict{total_arg}):\n")
+        f.write(f"class {name}(TypedDict{extra_kwargs}):\n")
         for key, type_str in entries:
             f.write(f"    {key}: {type_str}\n")
         f.write("\n")
     else:
         # Function-call syntax
-        total_arg = ", total=False" if not total else ""
         f.write(f'{name} = TypedDict("{name}", {{\n')
         for key, type_str in entries:
             f.write(f'    "{key}": {type_str},\n')
-        f.write(f"}}{total_arg})\n\n")
+        f.write(f"}}{extra_kwargs})\n\n")
 
 
 def _module_alias(module: str) -> str:
@@ -290,8 +299,10 @@ Do not edit manually. Regenerate with:
 
     # typing imports (always direct)
     typing_names = {n for m, n in all_imports if m == "typing"}
-    typing_names |= {"Literal", "TypedDict", "Any", "overload"}
+    typing_names |= {"Literal", "Any", "overload"}
+    typing_names -= {"TypedDict"}  # TypedDict comes from typing_extensions
     stub_f.write(f"from typing import {', '.join(sorted(typing_names))}\n")
+    stub_f.write("from typing_extensions import NotRequired, Required, TypedDict\n")
 
     # Direct from-imports for non-conflicting user modules
     direct_by_module: dict[str, set[str]] = {}
@@ -312,7 +323,7 @@ Do not edit manually. Regenerate with:
     stub_f.write("from pymongo.asynchronous.database import AsyncDatabase\n")
     stub_f.write("from typed_mongo import TypedCollection\n")
     stub_f.write("from collections.abc import Mapping\n")
-    stub_f.write("from typed_mongo.operators import AggExprOp, Op\n")
+    stub_f.write("from typed_mongo.operators import AggExprOp, AggregationStep, Op\n")
     stub_f.write("\n")
 
 

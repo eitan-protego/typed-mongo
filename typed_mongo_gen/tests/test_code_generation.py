@@ -1,11 +1,13 @@
 """Tests for code generation."""
 
+import io
 from pathlib import Path
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-from typed_mongo_gen.codegen import write_field_paths
+from typed_mongo_gen.codegen import _write_typeddict, write_field_paths
+from typed_mongo_gen.introspect import has_default
 
 
 class _TestModel(BaseModel):
@@ -508,3 +510,66 @@ def test_generated_update_code_compiles(tmp_path: Path):
 
     stub_content = stub_path.read_text()
     compile(stub_content, "<test>", "exec")
+
+
+# --- Task 3: _write_typeddict PEP 728 ---
+
+
+def test_write_typeddict_closed():
+    """_write_typeddict should support closed=True parameter."""
+    f = io.StringIO()
+    _write_typeddict(f, "TestStage", [("$match", "dict[str, Any]")], closed=True)
+    content = f.getvalue()
+    assert "closed=True" in content
+    assert 'TestStage = TypedDict("TestStage"' in content
+
+
+def test_write_typeddict_extra_items():
+    """_write_typeddict should support extra_items parameter."""
+    f = io.StringIO()
+    _write_typeddict(f, "TestFields", [("name", "str")], total=False, closed=True, extra_items="Any")
+    content = f.getvalue()
+    assert "closed=True" in content
+    assert "extra_items=Any" in content
+
+
+def test_write_typeddict_closed_class_syntax():
+    """closed=True should work with class syntax (valid identifier keys)."""
+    f = io.StringIO()
+    _write_typeddict(f, "TestFields", [("name", "str"), ("age", "int")], closed=True)
+    content = f.getvalue()
+    assert "class TestFields(TypedDict, closed=True):" in content
+    assert "    name: str" in content
+    assert "    age: int" in content
+
+
+# --- Task 4: stub header imports ---
+
+
+def test_stub_header_imports_typing_extensions(tmp_path: Path):
+    """Stub should import TypedDict from typing_extensions for PEP 728 support."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"TestModel": _TestModel})
+
+    content = stub_path.read_text()
+    assert "from typing_extensions import NotRequired, Required, TypedDict" in content
+    assert "from typed_mongo.operators import AggExprOp, AggregationStep, Op" in content
+
+
+# --- Task 5: has_default ---
+
+
+def test_has_default_with_default_value():
+    """Fields with default values should return True."""
+
+    class _Model(BaseModel):
+        required_field: str
+        optional_field: str = "default"
+        none_field: int | None = None
+        factory_field: list[str] = Field(default_factory=list)
+
+    assert not has_default(_Model, "required_field")
+    assert has_default(_Model, "optional_field")
+    assert has_default(_Model, "none_field")
+    assert has_default(_Model, "factory_field")

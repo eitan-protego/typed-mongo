@@ -11,6 +11,7 @@ import typing
 from typing import Any, get_args, get_origin
 
 from pydantic import AliasGenerator, BaseModel
+from pydantic_core import PydanticUndefined
 
 _BUILTINS = frozenset({str, int, float, bool, list, dict, bytes, type(None)})
 
@@ -203,3 +204,15 @@ def extract_list_element_type(annotation: Any) -> Any | None:
         return None
 
     return None
+
+
+def has_default(model: type[BaseModel], field_name: str) -> bool:
+    """Check if a field has a default value (not required when absent from document).
+
+    Returns True if the field has an explicit default value or a default_factory.
+    """
+    field_info = model.model_fields[field_name]
+    return (
+        field_info.default is not PydanticUndefined
+        or field_info.default_factory is not None
+    )

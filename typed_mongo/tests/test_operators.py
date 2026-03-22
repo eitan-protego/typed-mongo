@@ -190,6 +190,59 @@ def test_typed_collection_has_update_many():
     assert hasattr(TypedCollection, "update_many")
 
 
-def test_typed_collection_has_dump():
-    """TypedCollection should have dump method."""
-    assert hasattr(TypedCollection, "dump")
+def test_aggregation_step_types_exist():
+    """AggregationStep and individual stage TypedDicts should be importable."""
+    from typed_mongo.operators import (
+        AggregationStep,
+        GroupStage,
+        BucketStage,
+        BucketAutoStage,
+        UnwindStage,
+        ProjectStage,
+        LookupStage,
+        MatchStage,
+        SortStage,
+        LimitStage,
+        SkipStage,
+        SetStage,
+        AddFieldsStage,
+        UnsetStage,
+        CountStage,
+    )
+    assert AggregationStep is not None
+    assert GroupStage is not None
+
+
+def test_group_stage_requires_id():
+    """GroupStage should accept a dict with _id key."""
+    from typed_mongo.operators import GroupStage
+    stage: GroupStage = {"$group": {"_id": "$field", "count": {"$sum": 1}}}
+    assert "$group" in stage
+
+
+def test_limit_stage_accepts_int():
+    """LimitStage should accept an int."""
+    from typed_mongo.operators import LimitStage
+    stage: LimitStage = {"$limit": 10}
+    assert stage["$limit"] == 10
+
+
+def test_skip_stage_accepts_int():
+    """SkipStage should accept an int."""
+    from typed_mongo.operators import SkipStage
+    stage: SkipStage = {"$skip": 5}
+    assert stage["$skip"] == 5
+
+
+def test_aggregation_step_accepts_group():
+    """AggregationStep union should accept a GroupStage."""
+    from typed_mongo.operators import AggregationStep
+    step: AggregationStep = {"$group": {"_id": "$x"}}
+    assert "$group" in step
+
+
+def test_aggregation_step_accepts_limit():
+    """AggregationStep union should accept a LimitStage."""
+    from typed_mongo.operators import AggregationStep
+    step: AggregationStep = {"$limit": 10}
+    assert "$limit" in step

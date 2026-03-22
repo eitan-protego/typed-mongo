@@ -10,7 +10,7 @@ Usage — callers write plain dict literals; the type checker validates::
 """
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 # --- Generic operators (parameterized by field value type T) ---
 # Unfortunately, TypedDict can either be generic (class syntax) or contain keys
@@ -69,3 +69,88 @@ type AggExprOp = Literal[
 
 def combine_ops[T](*ops: NontrivialOp[T]) -> Op[T]:
     return cast(Op[T], {k: v for op in ops for k, v in op.items()})
+
+
+# --- Aggregation pipeline stage types ---
+# Structurally validated stages (also have model-specific codegen helpers)
+# NOTE: These intentionally do NOT use closed=True because operators.py uses
+# typing.TypedDict (not typing_extensions.TypedDict). PEP 728 closed/extra_items
+# is only needed in codegen'd .pyi stubs which use typing_extensions.TypedDict.
+
+
+class GroupStageValue(TypedDict):
+    _id: Any
+
+
+GroupStage = TypedDict("GroupStage", {"$group": GroupStageValue})
+
+BucketStageValue = TypedDict("BucketStageValue", {
+    "groupBy": Any,
+    "boundaries": list[Any],
+    "default": Any,
+    "output": NotRequired[dict[str, Any]],
+})
+BucketStage = TypedDict("BucketStage", {"$bucket": BucketStageValue})
+
+
+class BucketAutoStageValue(TypedDict):
+    groupBy: Any
+    buckets: int
+
+
+BucketAutoStage = TypedDict("BucketAutoStage", {"$bucketAuto": BucketAutoStageValue})
+
+UnwindStage = TypedDict("UnwindStage", {"$unwind": str | dict[str, Any]})
+
+ProjectStage = TypedDict("ProjectStage", {"$project": dict[str, Any]})
+
+LookupStageValue = TypedDict("LookupStageValue", {
+    "from": str,
+    "localField": str,
+    "foreignField": str,
+    "as": str,
+})
+LookupStage = TypedDict("LookupStage", {"$lookup": LookupStageValue})
+
+# Minimally annotated stages
+MatchStage = TypedDict("MatchStage", {"$match": dict[str, Any]})
+SortStage = TypedDict("SortStage", {"$sort": dict[str, int]})
+LimitStage = TypedDict("LimitStage", {"$limit": int})
+SkipStage = TypedDict("SkipStage", {"$skip": int})
+SetStage = TypedDict("SetStage", {"$set": dict[str, Any]})
+AddFieldsStage = TypedDict("AddFieldsStage", {"$addFields": dict[str, Any]})
+UnsetStage = TypedDict("UnsetStage", {"$unset": str | list[str]})
+CountStage = TypedDict("CountStage", {"$count": str})
+ReplaceRootStage = TypedDict("ReplaceRootStage", {"$replaceRoot": dict[str, Any]})
+ReplaceWithStage = TypedDict("ReplaceWithStage", {"$replaceWith": dict[str, Any]})
+OutStage = TypedDict("OutStage", {"$out": str | dict[str, Any]})
+MergeStage = TypedDict("MergeStage", {"$merge": str | dict[str, Any]})
+FacetStage = TypedDict("FacetStage", {"$facet": dict[str, list[Any]]})
+GraphLookupStage = TypedDict("GraphLookupStage", {"$graphLookup": dict[str, Any]})
+RedactStage = TypedDict("RedactStage", {"$redact": dict[str, Any]})
+SampleStage = TypedDict("SampleStage", {"$sample": dict[str, int]})
+UnionWithStage = TypedDict("UnionWithStage", {"$unionWith": str | dict[str, Any]})
+SortByCountStage = TypedDict("SortByCountStage", {"$sortByCount": str | dict[str, Any]})
+GeoNearStage = TypedDict("GeoNearStage", {"$geoNear": dict[str, Any]})
+DensifyStage = TypedDict("DensifyStage", {"$densify": dict[str, Any]})
+FillStage = TypedDict("FillStage", {"$fill": dict[str, Any]})
+DocumentsStage = TypedDict("DocumentsStage", {"$documents": list[dict[str, Any]]})
+SetWindowFieldsStage = TypedDict("SetWindowFieldsStage", {"$setWindowFields": dict[str, Any]})
+ChangeStreamStage = TypedDict("ChangeStreamStage", {"$changeStream": dict[str, Any]})
+CollStatsStage = TypedDict("CollStatsStage", {"$collStats": dict[str, Any]})
+CurrentOpStage = TypedDict("CurrentOpStage", {"$currentOp": dict[str, Any]})
+IndexStatsStage = TypedDict("IndexStatsStage", {"$indexStats": dict[str, Any]})
+ListSessionsStage = TypedDict("ListSessionsStage", {"$listSessions": dict[str, Any]})
+PlanCacheStatsStage = TypedDict("PlanCacheStatsStage", {"$planCacheStats": dict[str, Any]})
+SearchStage = TypedDict("SearchStage", {"$search": dict[str, Any]})
+SearchMetaStage = TypedDict("SearchMetaStage", {"$searchMeta": dict[str, Any]})
+
+type AggregationStep = (
+    GroupStage | BucketStage | BucketAutoStage | UnwindStage | ProjectStage | LookupStage
+    | MatchStage | SortStage | LimitStage | SkipStage | SetStage | AddFieldsStage
+    | UnsetStage | CountStage | ReplaceRootStage | ReplaceWithStage | OutStage | MergeStage
+    | FacetStage | GraphLookupStage | RedactStage | SampleStage | UnionWithStage
+    | SortByCountStage | GeoNearStage | DensifyStage | FillStage | DocumentsStage
+    | SetWindowFieldsStage | ChangeStreamStage | CollStatsStage | CurrentOpStage
+    | IndexStatsStage | ListSessionsStage | PlanCacheStatsStage | SearchStage | SearchMetaStage
+)

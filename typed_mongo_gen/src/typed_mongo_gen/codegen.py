@@ -6,6 +6,7 @@ Runtime .py file contains simple aliases, stub .pyi file contains full types.
 
 from __future__ import annotations
 
+import re
 import types
 import typing
 from collections.abc import Mapping
@@ -21,6 +22,7 @@ from typed_mongo_gen.introspect import (
     collect_field_path_types,
     collect_field_paths,
     extract_list_element_type,
+    has_default,
     is_numeric_type,
 )
 
@@ -28,8 +30,13 @@ _BUILTINS = frozenset({str, int, float, bool, list, dict, bytes, type(None)})
 
 
 def _all_valid_identifiers(keys: list[str]) -> bool:
-    """Check if all keys are valid Python identifiers (usable in class syntax)."""
-    return all(k.isidentifier() for k in keys)
+    """Check if all keys are valid Python identifiers (usable in class syntax).
+
+    Excludes Python keywords like 'from', 'as', 'class', etc. which are valid
+    identifiers but cannot be used as class attribute names.
+    """
+    import keyword
+    return all(k.isidentifier() and not keyword.iskeyword(k) for k in keys)
 
 
 def _write_typeddict(
@@ -344,6 +351,24 @@ def _write_nested_dict(
     _write_typeddict(stub_f, dict_name, entries)
 
 
+def _sanitize_type_name(type_src: str) -> str:
+    """Convert a type source string to a valid identifier for use in RefPath names.
+
+    E.g., 'str' -> 'Str', 'int | None' -> 'IntOrNone', 'list[str]' -> 'ListStr'.
+    """
+    name = type_src.replace(" | ", "Or").replace("[", "").replace("]", "").replace(", ", "And")
+    parts = name.split("Or")
+    parts = [p[0].upper() + p[1:] if p else p for p in parts]
+    return "Or".join(parts)
+
+
+def _to_snake_case(name: str) -> str:
+    """Convert PascalCase to snake_case."""
+    s = re.sub(r'(?<=[a-z0-9])([A-Z])', r'_\1', name)
+    s = re.sub(r'(?<=[A-Z])([A-Z][a-z])', r'_\1', s)
+    return s.lower()
+
+
 def _write_model(
     runtime_f: typing.TextIO,
     stub_f: typing.TextIO,
@@ -354,6 +379,8 @@ def _write_model(
     model_dict_names: dict[type, str],
 ) -> None:
     """Write a model's types and Collection class to both .py and .pyi files."""
+    func_name = _to_snake_case(model_name)
+
     # Runtime: simple aliases + Collection class
     runtime_f.write(f"# {model_name}\n")
     runtime_f.write(f"type {model_name}Path = str\n")
@@ -370,7 +397,31 @@ def _write_model(
     runtime_f.write(f"{model_name}Update = dict[str, Any]\n")
     runtime_f.write(f"{model_name}PipelineSet = dict[str, Any]\n")
     runtime_f.write(f"{model_name}PipelineUnset = dict[str, Any]\n")
-    runtime_f.write(f"type {model_name}PipelineStage = dict[str, Any]\n\n")
+    # Aggregation stage aliases
+    runtime_f.write(f"type {model_name}OptionalPath = str\n")
+    runtime_f.write(f"{model_name}MatchStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}SortStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}LimitStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}SkipStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}SetStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}AddFieldsStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}AggUnsetStage = dict[str, Any]\n")
+    runtime_f.write(f"type {model_name}PipelineStage = dict[str, Any]\n")
+    # Unsafe stage aliases
+    runtime_f.write(f"{model_name}GroupStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}GroupFields = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}UnwindStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}UnwindOptions = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}ProjectStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}BucketStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}BucketFields = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}BucketAutoStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}BucketAutoFields = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}LookupStage = dict[str, Any]\n")
+    runtime_f.write(f"{model_name}LookupFields = dict[str, Any]\n")
+    runtime_f.write(f"type {model_name}UnsafeStage = dict[str, Any]\n\n")
+    runtime_f.write(f"\ndef {func_name}_aggregation_step(step: dict[str, Any]) -> dict[str, Any]:\n")
+    runtime_f.write("    return step\n\n\n")
     runtime_f.write(f"class {model_name}Collection(TypedCollection):\n")
     runtime_f.write(
         "    def __init__(self, db: AsyncDatabase[dict[str, Any]]) -> None:\n"
@@ -446,18 +497,43 @@ def _write_model(
     unset_entries = [(path, 'Literal[""]') for path in sorted(path_types)]
     _write_typeddict(stub_f, f"{model_name}UnsetFields", unset_entries, total=False)
 
-    # RefPath: $-prefixed field paths for pipeline expressions
+    # RefPath: $-prefixed field paths for pipeline expressions (all fields)
     stub_f.write(f"type {model_name}RefPath = Literal[\n")
     for path in paths:
         stub_f.write(f'    "${path}",\n')
     stub_f.write("]\n\n")
 
-    # PipelineSetFields TypedDict (T | RefPath | Mapping[AggExprOp, Any])
-    pipeline_set_entries = [
-        (path, f"{_annotation_to_source(path_types[path], module_aliases, model_dict_names)} | {model_name}RefPath | Mapping[AggExprOp, Any]")
-        for path in sorted(path_types)
-    ]
-    _write_typeddict(stub_f, f"{model_name}PipelineSetFields", pipeline_set_entries, total=False)
+    # Per-type RefPaths: group top-level fields by value type for type-safe $set refs
+    type_to_paths: dict[str, list[str]] = {}
+    for path in sorted(path_types):
+        if "." in path:
+            continue  # Only top-level fields for per-type RefPaths
+        type_src = _annotation_to_source(path_types[path], module_aliases, model_dict_names)
+        type_to_paths.setdefault(type_src, []).append(path)
+
+    path_to_typed_ref: dict[str, str] = {}
+    for type_src, type_paths in type_to_paths.items():
+        sanitized = _sanitize_type_name(type_src)
+        ref_name = f"{model_name}{sanitized}RefPath"
+        stub_f.write(f"type {ref_name} = Literal[\n")
+        for path in type_paths:
+            stub_f.write(f'    "${path}",\n')
+        stub_f.write("]\n\n")
+        for path in type_paths:
+            path_to_typed_ref[path] = ref_name
+
+    # PipelineSetFields TypedDict (T | TypedRefPath | Mapping[AggExprOp, Any])
+    pipeline_set_entries = []
+    for path in sorted(path_types):
+        type_src = _annotation_to_source(path_types[path], module_aliases, model_dict_names)
+        ref_path_name = path_to_typed_ref.get(path, f"{model_name}RefPath")
+        pipeline_set_entries.append(
+            (path, f"{type_src} | {ref_path_name} | Mapping[AggExprOp, Any]")
+        )
+    _write_typeddict(
+        stub_f, f"{model_name}PipelineSetFields", pipeline_set_entries,
+        total=False, closed=True, extra_items="Any",
+    )
 
     # Update TypedDict (unified update document)
     update_entries = [
@@ -475,17 +551,127 @@ def _write_model(
     ]
     _write_typeddict(stub_f, f"{model_name}Update", update_entries, total=False)
 
-    # Pipeline stage types
-    _write_typeddict(stub_f, f"{model_name}PipelineSet", [("$set", f"{model_name}PipelineSetFields")])
-    _write_typeddict(stub_f, f"{model_name}PipelineUnset", [("$unset", f"{model_name}Path | list[{model_name}Path]")])
+    # --- Safe aggregation stage TypedDicts ---
 
-    stub_f.write(f"type {model_name}PipelineStage = {model_name}PipelineSet | {model_name}PipelineUnset\n\n")
+    # OptionalPath: fields with defaults (can be safely $unset in aggregation)
+    optional_paths = [
+        _resolve_alias(model, fname)
+        for fname in model.model_fields
+        if has_default(model, fname)
+    ]
+    if optional_paths:
+        stub_f.write(f"type {model_name}OptionalPath = Literal[\n")
+        for path in sorted(optional_paths):
+            stub_f.write(f'    "{path}",\n')
+        stub_f.write("]\n\n")
+    else:
+        stub_f.write(f"type {model_name}OptionalPath = str  # no optional fields\n\n")
+
+    _write_typeddict(stub_f, f"{model_name}MatchStage", [("$match", f"{model_name}Query")], closed=True)
+    _write_typeddict(stub_f, f"{model_name}SortStage", [("$sort", f"dict[{model_name}Path, Literal[1, -1]]")], closed=True)
+    _write_typeddict(stub_f, f"{model_name}LimitStage", [("$limit", "int")], closed=True)
+    _write_typeddict(stub_f, f"{model_name}SkipStage", [("$skip", "int")], closed=True)
+    _write_typeddict(stub_f, f"{model_name}SetStage", [("$set", f"{model_name}PipelineSetFields")], closed=True)
+    _write_typeddict(stub_f, f"{model_name}AddFieldsStage", [("$addFields", f"{model_name}PipelineSetFields")], closed=True)
+    if optional_paths:
+        _write_typeddict(stub_f, f"{model_name}AggUnsetStage", [("$unset", f"{model_name}OptionalPath | list[{model_name}OptionalPath]")], closed=True)
+
+    # PipelineStage union (safe stages only)
+    safe_stages = [
+        f"{model_name}MatchStage",
+        f"{model_name}SortStage",
+        f"{model_name}LimitStage",
+        f"{model_name}SkipStage",
+        f"{model_name}SetStage",
+        f"{model_name}AddFieldsStage",
+    ]
+    if optional_paths:
+        safe_stages.append(f"{model_name}AggUnsetStage")
+    stub_f.write(f"type {model_name}PipelineStage = (\n")
+    for i, stage in enumerate(safe_stages):
+        prefix = "    " if i == 0 else "    | "
+        stub_f.write(f"{prefix}{stage}\n")
+    stub_f.write(")\n\n")
+
+    # --- Model-specific unsafe stage helpers ---
+
+    # $group — _id checked against RefPath
+    _write_typeddict(stub_f, f"{model_name}GroupFields", [
+        ("_id", f"{model_name}RefPath | list[{model_name}RefPath] | dict[str, {model_name}RefPath] | None"),
+    ], closed=True)
+    _write_typeddict(stub_f, f"{model_name}GroupStage", [
+        ("$group", f"{model_name}GroupFields"),
+    ], closed=True)
+
+    # $unwind — path checked against RefPath
+    _write_typeddict(stub_f, f"{model_name}UnwindOptions", [
+        ("path", f"Required[{model_name}RefPath]"),
+        ("preserveNullAndEmptyArrays", "bool"),
+        ("includeArrayIndex", "str"),
+    ], total=False, closed=True)
+    _write_typeddict(stub_f, f"{model_name}UnwindStage", [
+        ("$unwind", f"{model_name}RefPath | {model_name}UnwindOptions"),
+    ], closed=True)
+
+    # $project — field names checked against Path
+    _write_typeddict(stub_f, f"{model_name}ProjectStage", [
+        ("$project", f"dict[{model_name}Path, Literal[0, 1] | dict[str, Any]]"),
+    ], closed=True)
+
+    # $bucket — groupBy checked against RefPath
+    _write_typeddict(stub_f, f"{model_name}BucketFields", [
+        ("groupBy", f"{model_name}RefPath"),
+        ("boundaries", "list[Any]"),
+        ("default", "Any"),
+        ("output", "NotRequired[dict[str, Any]]"),
+    ], closed=True)
+    _write_typeddict(stub_f, f"{model_name}BucketStage", [
+        ("$bucket", f"{model_name}BucketFields"),
+    ], closed=True)
+
+    # $bucketAuto — groupBy checked against RefPath
+    _write_typeddict(stub_f, f"{model_name}BucketAutoFields", [
+        ("groupBy", f"{model_name}RefPath"),
+        ("buckets", "int"),
+    ], closed=True)
+    _write_typeddict(stub_f, f"{model_name}BucketAutoStage", [
+        ("$bucketAuto", f"{model_name}BucketAutoFields"),
+    ], closed=True)
+
+    # $lookup — localField checked against Path
+    _write_typeddict(stub_f, f"{model_name}LookupFields", [
+        ("from", "str"),
+        ("localField", f"{model_name}Path"),
+        ("foreignField", "str"),
+        ("as", "str"),
+    ], closed=True)
+    _write_typeddict(stub_f, f"{model_name}LookupStage", [
+        ("$lookup", f"{model_name}LookupFields"),
+    ], closed=True)
+
+    # UnsafeStage union and aggregation_step function
+    unsafe_stages = [
+        f"{model_name}GroupStage",
+        f"{model_name}UnwindStage",
+        f"{model_name}ProjectStage",
+        f"{model_name}BucketStage",
+        f"{model_name}BucketAutoStage",
+        f"{model_name}LookupStage",
+    ]
+    stub_f.write(f"type {model_name}UnsafeStage = (\n")
+    for i, stage in enumerate(unsafe_stages):
+        prefix = "    " if i == 0 else "    | "
+        stub_f.write(f"{prefix}{stage}\n")
+    stub_f.write(")\n\n")
+
+    func_name = _to_snake_case(model_name)
+    stub_f.write(f"def {func_name}_aggregation_step(step: {model_name}UnsafeStage) -> AggregationStep: ...\n\n")
 
     # Collection class — model ref needs original class import (not the Dict)
     model_ref = _annotation_to_source(model, module_aliases)
     stub_f.write(
         f"class {model_name}Collection("
-        + f"TypedCollection[{model_ref}, {model_name}Dict, {model_name}Path, {model_name}Query, {model_name}Fields, {model_name}Update]"
+        + f"TypedCollection[{model_ref}, {model_name}Dict, {model_name}Path, {model_name}Query, {model_name}Fields, {model_name}Update, {model_name}PipelineStage]"
         + "):\n"
     )
     stub_f.write(

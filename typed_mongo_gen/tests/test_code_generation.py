@@ -285,39 +285,39 @@ def test_update_typed_dict(tmp_path: Path):
 
 
 def test_pipeline_set_fields_typed_dict(tmp_path: Path):
-    """Stub should have PipelineSetFields with T | RefPath | Mapping[AggExprOp, Any]."""
+    """Stub should have PipelineSetFields with T | TypedRefPath | Mapping[AggExprOp, Any]."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    # All keys are valid identifiers -> class syntax
-    assert "class MixedPipelineSetFields(TypedDict, total=False):" in content
-    assert "    name: str | MixedRefPath | Mapping[AggExprOp, Any]" in content
-    assert "    score: float | MixedRefPath | Mapping[AggExprOp, Any]" in content
+    # Should use closed=True and extra_items=Any
+    assert "closed=True" in content
+    assert "extra_items=Any" in content
+    # name is str -> should ref MixedStrRefPath, not generic MixedRefPath
+    assert "MixedStrRefPath | Mapping[AggExprOp, Any]" in content
 
 
 def test_pipeline_stage_union(tmp_path: Path):
-    """Stub should have PipelineStage union type."""
+    """Stub should have PipelineStage union with all safe stages."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert "type MixedPipelineStage = MixedPipelineSet | MixedPipelineUnset" in content
-    # $ keys -> function-call syntax
-    assert 'MixedPipelineSet = TypedDict("MixedPipelineSet"' in content
-    assert 'MixedPipelineUnset = TypedDict("MixedPipelineUnset"' in content
+    assert "type MixedPipelineStage = (" in content
+    assert "MixedMatchStage" in content
+    assert "MixedSortStage" in content
 
 
-def test_collection_stub_has_six_type_params(tmp_path: Path):
-    """Generated Collection stub should use all 6 type params including Model and Update."""
+def test_collection_stub_has_seven_type_params(tmp_path: Path):
+    """Generated Collection stub should use all 7 type params including PipelineStage."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    expected = "TypedCollection[_ModelWithMixedFields, MixedDict, MixedPath, MixedQuery, MixedFields, MixedUpdate]"
+    expected = "TypedCollection[_ModelWithMixedFields, MixedDict, MixedPath, MixedQuery, MixedFields, MixedUpdate, MixedPipelineStage]"
     assert expected in content
 
 
@@ -573,3 +573,190 @@ def test_has_default_with_default_value():
     assert has_default(_Model, "optional_field")
     assert has_default(_Model, "none_field")
     assert has_default(_Model, "factory_field")
+
+
+# --- Task 6: per-type RefPaths ---
+
+
+def test_per_type_ref_paths(tmp_path: Path):
+    """Stub should have per-type RefPath Literals grouping fields by value type."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    # str fields: name
+    assert "type MixedStrRefPath = Literal[" in content
+    assert '"$name"' in content
+    # float field: score
+    assert "type MixedFloatRefPath = Literal[" in content
+    # The generic RefPath should still exist for unsafe helpers
+    assert "type MixedRefPath = Literal[" in content
+
+
+def test_pipeline_set_fields_uses_typed_refs(tmp_path: Path):
+    """PipelineSetFields should use per-type RefPaths and have closed=True, extra_items=Any."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert "closed=True" in content
+    assert "extra_items=Any" in content
+
+
+# --- Task 7: OptionalPath and safe stages ---
+
+
+def test_optional_path_literal(tmp_path: Path):
+    """Stub should have OptionalPath with only fields that have defaults."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert "type MixedOptionalPath = Literal[" in content
+    opt_start = content.index("type MixedOptionalPath = Literal[")
+    opt_end = content.index("]", opt_start) + 1
+    opt_section = content[opt_start:opt_end]
+    assert '"age"' in opt_section
+    assert '"score"' in opt_section
+    assert '"tags"' in opt_section
+    assert '"active"' in opt_section
+    assert '"name"' not in opt_section
+
+
+def test_safe_aggregation_stages(tmp_path: Path):
+    """Stub should have safe aggregation stage TypedDicts."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert 'MixedMatchStage = TypedDict("MixedMatchStage"' in content
+    assert '"$match": MixedQuery,' in content
+    assert 'MixedSortStage = TypedDict("MixedSortStage"' in content
+    assert '"$sort": dict[MixedPath, Literal[1, -1]],' in content
+    assert 'MixedLimitStage = TypedDict("MixedLimitStage"' in content
+    assert '"$limit": int,' in content
+    assert 'MixedSkipStage = TypedDict("MixedSkipStage"' in content
+    assert '"$skip": int,' in content
+    assert 'MixedSetStage = TypedDict("MixedSetStage"' in content
+    assert '"$set": MixedPipelineSetFields,' in content
+    assert 'MixedAddFieldsStage = TypedDict("MixedAddFieldsStage"' in content
+    assert '"$addFields": MixedPipelineSetFields,' in content
+    assert 'MixedAggUnsetStage = TypedDict("MixedAggUnsetStage"' in content
+
+
+def test_pipeline_stage_union_updated(tmp_path: Path):
+    """PipelineStage union should include all safe stage types."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert "type MixedPipelineStage = " in content
+    stage_section = content.split("type MixedPipelineStage = ")[1].split("\n\n")[0]
+    assert "MixedMatchStage" in stage_section
+    assert "MixedSortStage" in stage_section
+    assert "MixedLimitStage" in stage_section
+    assert "MixedSkipStage" in stage_section
+    assert "MixedSetStage" in stage_section
+    assert "MixedAddFieldsStage" in stage_section
+    assert "MixedAggUnsetStage" in stage_section
+
+
+def test_runtime_has_aggregation_aliases(tmp_path: Path):
+    """Runtime .py should have dict[str, Any] aliases for aggregation types."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = runtime_path.read_text()
+    assert "type MixedOptionalPath = str" in content
+    assert "MixedMatchStage = dict[str, Any]" in content
+    assert "MixedSortStage = dict[str, Any]" in content
+    assert "MixedLimitStage = dict[str, Any]" in content
+    assert "MixedSkipStage = dict[str, Any]" in content
+    assert "MixedSetStage = dict[str, Any]" in content
+    assert "MixedAddFieldsStage = dict[str, Any]" in content
+    assert "MixedAggUnsetStage = dict[str, Any]" in content
+
+
+# --- Task 8: unsafe stages and aggregation_step ---
+
+
+def test_unsafe_stage_types(tmp_path: Path):
+    """Stub should have model-specific unsafe stage TypedDicts."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert 'MixedGroupStage = TypedDict("MixedGroupStage"' in content
+    assert '"$group": MixedGroupFields,' in content
+    assert "class MixedGroupFields(TypedDict, closed=True):" in content
+    assert 'MixedUnwindStage = TypedDict("MixedUnwindStage"' in content
+    assert 'MixedProjectStage = TypedDict("MixedProjectStage"' in content
+    assert 'MixedLookupStage = TypedDict("MixedLookupStage"' in content
+    # LookupFields uses function-call syntax due to "from"/"as" keywords
+    assert 'MixedLookupFields = TypedDict("MixedLookupFields"' in content
+    assert '"localField": MixedPath,' in content
+    assert 'MixedBucketStage = TypedDict("MixedBucketStage"' in content
+    assert 'MixedBucketAutoStage = TypedDict("MixedBucketAutoStage"' in content
+
+
+def test_aggregation_step_function_stub(tmp_path: Path):
+    """Stub should have {name}_aggregation_step() function."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = stub_path.read_text()
+    assert "type MixedUnsafeStage = " in content
+    assert "def mixed_aggregation_step(step: MixedUnsafeStage) -> AggregationStep: ..." in content
+
+
+def test_aggregation_step_function_runtime(tmp_path: Path):
+    """Runtime .py should have {name}_aggregation_step() identity function."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    content = runtime_path.read_text()
+    assert "def mixed_aggregation_step(step: dict[str, Any]) -> dict[str, Any]:" in content
+    assert "    return step" in content
+
+
+# --- Task 10: compilation and edge cases ---
+
+
+def test_generated_aggregation_code_compiles(tmp_path: Path):
+    """Generated stub with all aggregation types should compile."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+
+    stub_content = stub_path.read_text()
+    compile(stub_content, "<test>", "exec")
+
+    runtime_content = runtime_path.read_text()
+    compile(runtime_content, "<test>", "exec")
+
+
+def test_no_optional_path_when_no_defaults(tmp_path: Path):
+    """Models with no default fields should handle OptionalPath gracefully."""
+
+    class _AllRequired(BaseModel):
+        name: str
+        age: int
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"AllRequired": _AllRequired})
+
+    content = stub_path.read_text()
+    compile(content, "<test>", "exec")
+    # PipelineStage should not include AggUnsetStage
+    stage_section = content.split("type AllRequiredPipelineStage = (")[1].split(")")[0]
+    assert "AggUnsetStage" not in stage_section

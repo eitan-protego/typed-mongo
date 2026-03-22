@@ -12,6 +12,17 @@ Add type-safe aggregation pipeline support to typed-mongo. Each aggregation stag
 
 No new files.
 
+## Breaking Changes
+
+- **`aggregate()` return type**: Changes from `list[M]` (eager) to `TypedCursor[M]` (lazy). Callers that expect `list[M]` must call `.to_list()` on the result.
+- **`PipelineSetFields` narrows ref path types**: Each field's `$`-reference is restricted to fields of the same value type (was: any `RefPath`). Uses of cross-type references must use `Mapping[AggExprOp, Any]` expressions instead.
+- **`PipelineSetFields` uses PEP 728 `closed=True, extra_items=Any`**: Requires basedpyright (confirmed supported). Standard pyright/mypy may not support this.
+
+## Dependencies
+
+- `typing_extensions >= 4.10` must be added as a dependency of `typed_mongo_gen` (already in lockfile, version 4.15.0). Generated `.pyi` stubs use `from typing_extensions import TypedDict` for PEP 728 `closed`/`extra_items` support.
+- Target type checker: **basedpyright** (confirmed PEP 728 support).
+
 ## Base Library Changes
 
 ### `operators.py`: `AggregationStep`
@@ -70,7 +81,7 @@ Runtime definition: `type AggregationStep = dict[str, Any]` (no runtime cost).
 
 Type stub (in `operators.py` itself, using `TYPE_CHECKING` guard or maintaining the existing pattern of using Mapping-based type aliases that work both at runtime and for type checkers — whichever is simpler given that operators.py currently has no `.pyi`): full TypedDict definitions.
 
-Since `operators.py` currently has no separate `.pyi`, and adding a new file is not allowed, these TypedDict definitions will be written directly in `operators.py`. They impose no meaningful runtime cost since TypedDict classes are lightweight. The runtime `type AggregationStep = dict[str, Any]` alias will be used in the generated runtime `.py`, while the stub `.pyi` will import and use the real union type.
+All ~30 stage TypedDicts are defined directly in `operators.py` and are available at both runtime and type-check time. TypedDict classes are lightweight (just metadata, no instances created), so there is no meaningful runtime cost. The generated `.pyi` stubs import `AggregationStep` from `typed_mongo.operators` alongside the existing `AggExprOp` and `Op` imports.
 
 ### `collection.py`: 7th Type Parameter + Overloaded `aggregate()`
 
@@ -115,7 +126,11 @@ async def aggregate(
     return TypedCursor(self._model, self._collection.aggregate(full_pipeline))
 ```
 
-`from_database` return type annotation updated to include 7th `Any`.
+`from_database` return type annotation updated to include 7th `Any`:
+
+```python
+) -> TypedCollection[M, Any, Any, Any, Any, Any, Any]:
+```
 
 ## Codegen Changes
 
@@ -212,13 +227,18 @@ UserGroupStage = TypedDict("UserGroupStage", {
     "$group": UserGroupFields,
 }, closed=True)
 
-class UserGroupFields(TypedDict, total=False, closed=True):
+class UserGroupFields(TypedDict, closed=True):
     _id: UserRefPath | list[UserRefPath] | dict[str, UserRefPath] | None
 
-# $unwind — path checked against RefPath
+# $unwind — path checked against RefPath, supports both string and object form
 UserUnwindStage = TypedDict("UserUnwindStage", {
-    "$unwind": UserRefPath,
+    "$unwind": UserRefPath | UserUnwindOptions,
 }, closed=True)
+
+class UserUnwindOptions(TypedDict, total=False, closed=True):
+    path: Required[UserRefPath]
+    preserveNullAndEmptyArrays: bool
+    includeArrayIndex: str
 
 # $project — field names checked against Path
 UserProjectStage = TypedDict("UserProjectStage", {
@@ -234,7 +254,7 @@ class UserBucketFields(TypedDict, closed=True):
     groupBy: UserRefPath
     boundaries: list[Any]
     default: Any
-    output: dict[str, Any]  # total=False not applicable to individual keys here
+    output: NotRequired[dict[str, Any]]
 
 # $bucketAuto — groupBy checked against RefPath
 UserBucketAutoStage = TypedDict("UserBucketAutoStage", {
@@ -302,6 +322,7 @@ UserAggUnsetStage = dict[str, Any]
 UserGroupStage = dict[str, Any]
 UserGroupFields = dict[str, Any]
 UserUnwindStage = dict[str, Any]
+UserUnwindOptions = dict[str, Any]
 UserProjectStage = dict[str, Any]
 UserBucketStage = dict[str, Any]
 UserBucketFields = dict[str, Any]
@@ -346,6 +367,12 @@ raw_pipeline: list[AggregationStep] = [
     {"$sort": {"count": -1}},
 ]
 ```
+
+## Implementation Notes
+
+- The existing `_write_typeddict` helper in `codegen.py` must be extended to support `closed=True` and `extra_items=Any` parameters (PEP 728). These are only needed in the `.pyi` output.
+- The generated `.pyi` header must import `TypedDict` from `typing_extensions` (not `typing`) to get PEP 728 support. Also import `Required`, `NotRequired` from `typing_extensions`.
+- The `AggregationStep` import must be added to the stub header alongside `AggExprOp` and `Op`.
 
 ## Testing Strategy
 

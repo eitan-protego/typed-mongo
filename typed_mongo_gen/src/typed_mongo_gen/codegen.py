@@ -45,8 +45,6 @@ def _write_typeddict(
     entries: list[tuple[str, str]],
     *,
     total: bool = True,
-    closed: bool = False,
-    extra_items: str | None = None,
 ) -> None:
     """Write a TypedDict using class syntax if possible, else function-call syntax."""
     keys = [k for k, _ in entries]
@@ -55,10 +53,6 @@ def _write_typeddict(
     extra_kwargs = ""
     if not total:
         extra_kwargs += ", total=False"
-    if closed:
-        extra_kwargs += ", closed=True"
-    if extra_items is not None:
-        extra_kwargs += f", extra_items={extra_items}"
 
     if not entries:
         # Empty TypedDict — always use function-call syntax
@@ -307,9 +301,8 @@ Do not edit manually. Regenerate with:
     # typing imports (always direct)
     typing_names = {n for m, n in all_imports if m == "typing"}
     typing_names |= {"Literal", "Any", "overload"}
-    typing_names -= {"TypedDict"}  # TypedDict comes from typing_extensions
+    typing_names |= {"NotRequired", "Required", "TypedDict"}
     stub_f.write(f"from typing import {', '.join(sorted(typing_names))}\n")
-    stub_f.write("from typing_extensions import NotRequired, Required, TypedDict\n")
 
     # Direct from-imports for non-conflicting user modules
     direct_by_module: dict[str, set[str]] = {}
@@ -350,16 +343,6 @@ def _write_nested_dict(
         entries.append((alias, type_str))
     _write_typeddict(stub_f, dict_name, entries)
 
-
-def _sanitize_type_name(type_src: str) -> str:
-    """Convert a type source string to a valid identifier for use in RefPath names.
-
-    E.g., 'str' -> 'Str', 'int | None' -> 'IntOrNone', 'list[str]' -> 'ListStr'.
-    """
-    name = type_src.replace(" | ", "Or").replace("[", "").replace("]", "").replace(", ", "And")
-    parts = name.split("Or")
-    parts = [p[0].upper() + p[1:] if p else p for p in parts]
-    return "Or".join(parts)
 
 
 def _to_snake_case(name: str) -> str:
@@ -470,8 +453,10 @@ def _write_model(
 
     # NumericFields TypedDict (only int/float fields)
     numeric_paths = {p: t for p, t in path_types.items() if is_numeric_type(t)}
-    numeric_entries = [(p, "int | float") for p in sorted(numeric_paths)]
-    _write_typeddict(stub_f, f"{model_name}NumericFields", numeric_entries, total=False)
+    has_numeric = bool(numeric_paths)
+    if has_numeric:
+        numeric_entries = [(p, "int | float") for p in sorted(numeric_paths)]
+        _write_typeddict(stub_f, f"{model_name}NumericFields", numeric_entries, total=False)
 
     # ArrayElementFields TypedDict (only list fields -> element type)
     array_paths: dict[str, str] = {}
@@ -479,19 +464,21 @@ def _write_model(
         elem = extract_list_element_type(t)
         if elem is not None:
             array_paths[p] = _annotation_to_source(elem, module_aliases, model_dict_names)
-    array_entries = [(p, array_paths[p]) for p in sorted(array_paths)]
-    _write_typeddict(stub_f, f"{model_name}ArrayElementFields", array_entries, total=False)
+    has_arrays = bool(array_paths)
+    if has_arrays:
+        array_entries = [(p, array_paths[p]) for p in sorted(array_paths)]
+        _write_typeddict(stub_f, f"{model_name}ArrayElementFields", array_entries, total=False)
 
-    # ArrayPushFields TypedDict (T | Mapping[Literal["$each"], list[T]] for $push/$addToSet)
-    push_entries = [
-        (p, f'{array_paths[p]} | Mapping[Literal["$each"], list[{array_paths[p]}]]')
-        for p in sorted(array_paths)
-    ]
-    _write_typeddict(stub_f, f"{model_name}ArrayPushFields", push_entries, total=False)
+        # ArrayPushFields TypedDict (T | Mapping[Literal["$each"], list[T]] for $push/$addToSet)
+        push_entries = [
+            (p, f'{array_paths[p]} | Mapping[Literal["$each"], list[{array_paths[p]}]]')
+            for p in sorted(array_paths)
+        ]
+        _write_typeddict(stub_f, f"{model_name}ArrayPushFields", push_entries, total=False)
 
-    # ArrayPopFields TypedDict (only list fields -> Literal[1, -1])
-    pop_entries = [(p, "Literal[1, -1]") for p in sorted(array_paths)]
-    _write_typeddict(stub_f, f"{model_name}ArrayPopFields", pop_entries, total=False)
+        # ArrayPopFields TypedDict (only list fields -> Literal[1, -1])
+        pop_entries = [(p, "Literal[1, -1]") for p in sorted(array_paths)]
+        _write_typeddict(stub_f, f"{model_name}ArrayPopFields", pop_entries, total=False)
 
     # UnsetFields TypedDict (all fields -> Literal[""])
     unset_entries = [(path, 'Literal[""]') for path in sorted(path_types)]
@@ -503,52 +490,34 @@ def _write_model(
         stub_f.write(f'    "${path}",\n')
     stub_f.write("]\n\n")
 
-    # Per-type RefPaths: group top-level fields by value type for type-safe $set refs
-    type_to_paths: dict[str, list[str]] = {}
-    for path in sorted(path_types):
-        if "." in path:
-            continue  # Only top-level fields for per-type RefPaths
-        type_src = _annotation_to_source(path_types[path], module_aliases, model_dict_names)
-        type_to_paths.setdefault(type_src, []).append(path)
-
-    path_to_typed_ref: dict[str, str] = {}
-    for type_src, type_paths in type_to_paths.items():
-        sanitized = _sanitize_type_name(type_src)
-        ref_name = f"{model_name}{sanitized}RefPath"
-        stub_f.write(f"type {ref_name} = Literal[\n")
-        for path in type_paths:
-            stub_f.write(f'    "${path}",\n')
-        stub_f.write("]\n\n")
-        for path in type_paths:
-            path_to_typed_ref[path] = ref_name
-
-    # PipelineSetFields TypedDict (T | TypedRefPath | Mapping[AggExprOp, Any])
+    # PipelineSetFields TypedDict (T | RefPath | Mapping[AggExprOp, Any])
     pipeline_set_entries = []
     for path in sorted(path_types):
         type_src = _annotation_to_source(path_types[path], module_aliases, model_dict_names)
-        ref_path_name = path_to_typed_ref.get(path, f"{model_name}RefPath")
         pipeline_set_entries.append(
-            (path, f"{type_src} | {ref_path_name} | Mapping[AggExprOp, Any]")
+            (path, f"{type_src} | {model_name}RefPath | Mapping[AggExprOp, Any]")
         )
     _write_typeddict(
         stub_f, f"{model_name}PipelineSetFields", pipeline_set_entries,
-        total=False, closed=True, extra_items="Any",
+        total=False,
     )
 
     # Update TypedDict (unified update document)
-    update_entries = [
+    update_entries: list[tuple[str, str]] = [
         ("$set", f"{model_name}Fields"),
         ("$setOnInsert", f"{model_name}Fields"),
         ("$unset", f"{model_name}UnsetFields"),
-        ("$inc", f"{model_name}NumericFields"),
-        ("$mul", f"{model_name}NumericFields"),
-        ("$min", f"{model_name}Fields"),
-        ("$max", f"{model_name}Fields"),
-        ("$push", f"{model_name}ArrayPushFields"),
-        ("$pull", f"{model_name}ArrayElementFields"),
-        ("$addToSet", f"{model_name}ArrayPushFields"),
-        ("$pop", f"{model_name}ArrayPopFields"),
     ]
+    if has_numeric:
+        update_entries.append(("$inc", f"{model_name}NumericFields"))
+        update_entries.append(("$mul", f"{model_name}NumericFields"))
+    update_entries.append(("$min", f"{model_name}Fields"))
+    update_entries.append(("$max", f"{model_name}Fields"))
+    if has_arrays:
+        update_entries.append(("$push", f"{model_name}ArrayPushFields"))
+        update_entries.append(("$pull", f"{model_name}ArrayElementFields"))
+        update_entries.append(("$addToSet", f"{model_name}ArrayPushFields"))
+        update_entries.append(("$pop", f"{model_name}ArrayPopFields"))
     _write_typeddict(stub_f, f"{model_name}Update", update_entries, total=False)
 
     # --- Safe aggregation stage TypedDicts ---
@@ -567,14 +536,14 @@ def _write_model(
     else:
         stub_f.write(f"type {model_name}OptionalPath = str  # no optional fields\n\n")
 
-    _write_typeddict(stub_f, f"{model_name}MatchStage", [("$match", f"{model_name}Query")], closed=True)
-    _write_typeddict(stub_f, f"{model_name}SortStage", [("$sort", f"dict[{model_name}Path, Literal[1, -1]]")], closed=True)
-    _write_typeddict(stub_f, f"{model_name}LimitStage", [("$limit", "int")], closed=True)
-    _write_typeddict(stub_f, f"{model_name}SkipStage", [("$skip", "int")], closed=True)
-    _write_typeddict(stub_f, f"{model_name}SetStage", [("$set", f"{model_name}PipelineSetFields")], closed=True)
-    _write_typeddict(stub_f, f"{model_name}AddFieldsStage", [("$addFields", f"{model_name}PipelineSetFields")], closed=True)
+    _write_typeddict(stub_f, f"{model_name}MatchStage", [("$match", f"{model_name}Query")])
+    _write_typeddict(stub_f, f"{model_name}SortStage", [("$sort", f"dict[{model_name}Path, Literal[1, -1]]")])
+    _write_typeddict(stub_f, f"{model_name}LimitStage", [("$limit", "int")])
+    _write_typeddict(stub_f, f"{model_name}SkipStage", [("$skip", "int")])
+    _write_typeddict(stub_f, f"{model_name}SetStage", [("$set", f"{model_name}PipelineSetFields")])
+    _write_typeddict(stub_f, f"{model_name}AddFieldsStage", [("$addFields", f"{model_name}PipelineSetFields")])
     if optional_paths:
-        _write_typeddict(stub_f, f"{model_name}AggUnsetStage", [("$unset", f"{model_name}OptionalPath | list[{model_name}OptionalPath]")], closed=True)
+        _write_typeddict(stub_f, f"{model_name}AggUnsetStage", [("$unset", f"{model_name}OptionalPath | list[{model_name}OptionalPath]")])
 
     # PipelineStage union (safe stages only)
     safe_stages = [
@@ -598,25 +567,25 @@ def _write_model(
     # $group — _id checked against RefPath
     _write_typeddict(stub_f, f"{model_name}GroupFields", [
         ("_id", f"{model_name}RefPath | list[{model_name}RefPath] | dict[str, {model_name}RefPath] | None"),
-    ], closed=True)
+    ])
     _write_typeddict(stub_f, f"{model_name}GroupStage", [
         ("$group", f"{model_name}GroupFields"),
-    ], closed=True)
+    ])
 
     # $unwind — path checked against RefPath
     _write_typeddict(stub_f, f"{model_name}UnwindOptions", [
         ("path", f"Required[{model_name}RefPath]"),
         ("preserveNullAndEmptyArrays", "bool"),
         ("includeArrayIndex", "str"),
-    ], total=False, closed=True)
+    ], total=False)
     _write_typeddict(stub_f, f"{model_name}UnwindStage", [
         ("$unwind", f"{model_name}RefPath | {model_name}UnwindOptions"),
-    ], closed=True)
+    ])
 
     # $project — field names checked against Path
     _write_typeddict(stub_f, f"{model_name}ProjectStage", [
         ("$project", f"dict[{model_name}Path, Literal[0, 1] | dict[str, Any]]"),
-    ], closed=True)
+    ])
 
     # $bucket — groupBy checked against RefPath
     _write_typeddict(stub_f, f"{model_name}BucketFields", [
@@ -624,19 +593,19 @@ def _write_model(
         ("boundaries", "list[Any]"),
         ("default", "Any"),
         ("output", "NotRequired[dict[str, Any]]"),
-    ], closed=True)
+    ])
     _write_typeddict(stub_f, f"{model_name}BucketStage", [
         ("$bucket", f"{model_name}BucketFields"),
-    ], closed=True)
+    ])
 
     # $bucketAuto — groupBy checked against RefPath
     _write_typeddict(stub_f, f"{model_name}BucketAutoFields", [
         ("groupBy", f"{model_name}RefPath"),
         ("buckets", "int"),
-    ], closed=True)
+    ])
     _write_typeddict(stub_f, f"{model_name}BucketAutoStage", [
         ("$bucketAuto", f"{model_name}BucketAutoFields"),
-    ], closed=True)
+    ])
 
     # $lookup — localField checked against Path
     _write_typeddict(stub_f, f"{model_name}LookupFields", [
@@ -644,10 +613,10 @@ def _write_model(
         ("localField", f"{model_name}Path"),
         ("foreignField", "str"),
         ("as", "str"),
-    ], closed=True)
+    ])
     _write_typeddict(stub_f, f"{model_name}LookupStage", [
         ("$lookup", f"{model_name}LookupFields"),
-    ], closed=True)
+    ])
 
     # UnsafeStage union and aggregation_step function
     unsafe_stages = [

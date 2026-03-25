@@ -285,17 +285,13 @@ def test_update_typed_dict(tmp_path: Path):
 
 
 def test_pipeline_set_fields_typed_dict(tmp_path: Path):
-    """Stub should have PipelineSetFields with T | TypedRefPath | Mapping[AggExprOp, Any]."""
+    """Stub should have PipelineSetFields with T | RefPath | Mapping[AggExprOp, Any]."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    # Should use closed=True and extra_items=Any
-    assert "closed=True" in content
-    assert "extra_items=Any" in content
-    # name is str -> should ref MixedStrRefPath, not generic MixedRefPath
-    assert "MixedStrRefPath | Mapping[AggExprOp, Any]" in content
+    assert "MixedRefPath | Mapping[AggExprOp, Any]" in content
 
 
 def test_pipeline_stage_union(tmp_path: Path):
@@ -515,45 +511,29 @@ def test_generated_update_code_compiles(tmp_path: Path):
 # --- Task 3: _write_typeddict PEP 728 ---
 
 
-def test_write_typeddict_closed():
-    """_write_typeddict should support closed=True parameter."""
+def test_write_typeddict_function_call_syntax():
+    """_write_typeddict should use function-call syntax for non-identifier keys."""
     f = io.StringIO()
-    _write_typeddict(f, "TestStage", [("$match", "dict[str, Any]")], closed=True)
+    _write_typeddict(f, "TestStage", [("$match", "dict[str, Any]")])
     content = f.getvalue()
-    assert "closed=True" in content
     assert 'TestStage = TypedDict("TestStage"' in content
-
-
-def test_write_typeddict_extra_items():
-    """_write_typeddict should support extra_items parameter."""
-    f = io.StringIO()
-    _write_typeddict(f, "TestFields", [("name", "str")], total=False, closed=True, extra_items="Any")
-    content = f.getvalue()
-    assert "closed=True" in content
-    assert "extra_items=Any" in content
-
-
-def test_write_typeddict_closed_class_syntax():
-    """closed=True should work with class syntax (valid identifier keys)."""
-    f = io.StringIO()
-    _write_typeddict(f, "TestFields", [("name", "str"), ("age", "int")], closed=True)
-    content = f.getvalue()
-    assert "class TestFields(TypedDict, closed=True):" in content
-    assert "    name: str" in content
-    assert "    age: int" in content
 
 
 # --- Task 4: stub header imports ---
 
 
-def test_stub_header_imports_typing_extensions(tmp_path: Path):
-    """Stub should import TypedDict from typing_extensions for PEP 728 support."""
+def test_stub_header_imports_typing(tmp_path: Path):
+    """Stub should import TypedDict, NotRequired, Required from typing."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"TestModel": _TestModel})
 
     content = stub_path.read_text()
-    assert "from typing_extensions import NotRequired, Required, TypedDict" in content
+    typing_line = [l for l in content.splitlines() if l.startswith("from typing import")][0]
+    assert "TypedDict" in typing_line
+    assert "NotRequired" in typing_line
+    assert "Required" in typing_line
+    assert "typing_extensions" not in content
     assert "from typed_mongo.operators import AggExprOp, AggregationStep, Op" in content
 
 
@@ -575,34 +555,21 @@ def test_has_default_with_default_value():
     assert has_default(_Model, "factory_field")
 
 
-# --- Task 6: per-type RefPaths ---
+# --- Task 6: RefPaths ---
 
 
-def test_per_type_ref_paths(tmp_path: Path):
-    """Stub should have per-type RefPath Literals grouping fields by value type."""
+def test_pipeline_set_fields_uses_generic_ref(tmp_path: Path):
+    """PipelineSetFields should use the generic RefPath for all fields."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    # str fields: name
-    assert "type MixedStrRefPath = Literal[" in content
-    assert '"$name"' in content
-    # float field: score
-    assert "type MixedFloatRefPath = Literal[" in content
-    # The generic RefPath should still exist for unsafe helpers
-    assert "type MixedRefPath = Literal[" in content
-
-
-def test_pipeline_set_fields_uses_typed_refs(tmp_path: Path):
-    """PipelineSetFields should use per-type RefPaths and have closed=True, extra_items=Any."""
-    runtime_path = tmp_path / "out.py"
-    stub_path = tmp_path / "out.pyi"
-    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
-
-    content = stub_path.read_text()
-    assert "closed=True" in content
-    assert "extra_items=Any" in content
+    assert "MixedPipelineSetFields" in content
+    # All fields use generic MixedRefPath, no per-type refs
+    assert "MixedStrRefPath" not in content
+    assert "MixedFloatRefPath" not in content
+    assert "MixedRefPath | Mapping[AggExprOp, Any]" in content
 
 
 # --- Task 7: OptionalPath and safe stages ---
@@ -695,7 +662,7 @@ def test_unsafe_stage_types(tmp_path: Path):
     content = stub_path.read_text()
     assert 'MixedGroupStage = TypedDict("MixedGroupStage"' in content
     assert '"$group": MixedGroupFields,' in content
-    assert "class MixedGroupFields(TypedDict, closed=True):" in content
+    assert "class MixedGroupFields(TypedDict):" in content
     assert 'MixedUnwindStage = TypedDict("MixedUnwindStage"' in content
     assert 'MixedProjectStage = TypedDict("MixedProjectStage"' in content
     assert 'MixedLookupStage = TypedDict("MixedLookupStage"' in content

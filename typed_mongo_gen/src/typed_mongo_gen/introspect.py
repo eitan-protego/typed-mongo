@@ -206,6 +206,37 @@ def extract_list_element_type(annotation: Any) -> Any | None:
     return None
 
 
+def collect_optional_paths(model: type[BaseModel]) -> list[str]:
+    """Return sorted list of all dot-delimited paths where the leaf field has a default.
+
+    A field is optional (safe to $unset) if it has an explicit default value
+    or a default_factory.
+    """
+    paths: list[str] = []
+    _walk_optional(model, "", paths, frozenset())
+    return sorted(paths)
+
+
+def _walk_optional(
+    model: type[BaseModel],
+    prefix: str,
+    paths: list[str],
+    seen: frozenset[type[BaseModel]],
+) -> None:
+    for field_name in model.model_fields:
+        alias = _resolve_alias(model, field_name)
+        full_path = f"{prefix}{alias}" if not prefix else f"{prefix}.{alias}"
+
+        if has_default(model, field_name):
+            paths.append(full_path)
+
+        annotation = model.model_fields[field_name].annotation
+        nested_models = _extract_base_models(annotation)
+        for nested in nested_models:
+            if nested not in seen:
+                _walk_optional(nested, full_path, paths, seen | {nested})
+
+
 def has_default(model: type[BaseModel], field_name: str) -> bool:
     """Check if a field has a default value (not required when absent from document).
 

@@ -21,6 +21,7 @@ from typed_mongo_gen.introspect import (
     _resolve_alias,
     collect_field_path_types,
     collect_field_paths,
+    collect_optional_paths,
     extract_list_element_type,
     has_default,
     is_numeric_type,
@@ -480,9 +481,18 @@ def _write_model(
         pop_entries = [(p, "Literal[1, -1]") for p in sorted(array_paths)]
         _write_typeddict(stub_f, f"{model_name}ArrayPopFields", pop_entries, total=False)
 
-    # UnsetFields TypedDict (all fields -> Literal[""])
-    unset_entries = [(path, 'Literal[""]') for path in sorted(path_types)]
-    _write_typeddict(stub_f, f"{model_name}UnsetFields", unset_entries, total=False)
+    # OptionalPath: all paths where the leaf field has a default (can be safely $unset)
+    optional_paths = collect_optional_paths(model)
+    if optional_paths:
+        stub_f.write(f"type {model_name}OptionalPath = Literal[\n")
+        for path in sorted(optional_paths):
+            stub_f.write(f'    "{path}",\n')
+        stub_f.write("]\n\n")
+    else:
+        stub_f.write(f"type {model_name}OptionalPath = str  # no optional fields\n\n")
+
+    # UnsetFields: only fields with defaults can be unset
+    stub_f.write(f'type {model_name}UnsetFields = dict[{model_name}OptionalPath, Literal[""]]\n\n')
 
     # RefPath: $-prefixed field paths for pipeline expressions (all fields)
     stub_f.write(f"type {model_name}RefPath = Literal[\n")
@@ -522,26 +532,12 @@ def _write_model(
 
     # --- Safe aggregation stage TypedDicts ---
 
-    # OptionalPath: fields with defaults (can be safely $unset in aggregation)
-    optional_paths = [
-        _resolve_alias(model, fname)
-        for fname in model.model_fields
-        if has_default(model, fname)
-    ]
-    if optional_paths:
-        stub_f.write(f"type {model_name}OptionalPath = Literal[\n")
-        for path in sorted(optional_paths):
-            stub_f.write(f'    "{path}",\n')
-        stub_f.write("]\n\n")
-    else:
-        stub_f.write(f"type {model_name}OptionalPath = str  # no optional fields\n\n")
-
     _write_typeddict(stub_f, f"{model_name}MatchStage", [("$match", f"{model_name}Query")])
     _write_typeddict(stub_f, f"{model_name}SortStage", [("$sort", f"dict[{model_name}Path, Literal[1, -1]]")])
     _write_typeddict(stub_f, f"{model_name}LimitStage", [("$limit", "int")])
     _write_typeddict(stub_f, f"{model_name}SkipStage", [("$skip", "int")])
     _write_typeddict(stub_f, f"{model_name}SetStage", [("$set", f"{model_name}PipelineSetFields")])
-    _write_typeddict(stub_f, f"{model_name}AddFieldsStage", [("$addFields", f"{model_name}PipelineSetFields")])
+    _write_typeddict(stub_f, f"{model_name}AddFieldsStage", [("$addFields", "dict[str, Any]")])
     if optional_paths:
         _write_typeddict(stub_f, f"{model_name}AggUnsetStage", [("$unset", f"{model_name}OptionalPath | list[{model_name}OptionalPath]")])
 

@@ -219,17 +219,13 @@ def test_array_push_fields_typed_dict(tmp_path: Path):
 
 
 def test_unset_fields_typed_dict(tmp_path: Path):
-    """Stub should have UnsetFields with all fields mapped to Literal[""]."""
+    """Stub should have UnsetFields as dict[OptionalPath, Literal[""]]."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert "class MixedUnsetFields(TypedDict, total=False):" in content
-    assert '    name: Literal[""]' in content
-    assert '    age: Literal[""]' in content
-    assert '    score: Literal[""]' in content
-    assert '    tags: Literal[""]' in content
+    assert 'type MixedUnsetFields = dict[MixedOptionalPath, Literal[""]]' in content
 
 
 def test_runtime_has_new_type_aliases(tmp_path: Path):
@@ -611,7 +607,7 @@ def test_safe_aggregation_stages(tmp_path: Path):
     assert 'MixedSetStage = TypedDict("MixedSetStage"' in content
     assert '"$set": MixedPipelineSetFields,' in content
     assert 'MixedAddFieldsStage = TypedDict("MixedAddFieldsStage"' in content
-    assert '"$addFields": MixedPipelineSetFields,' in content
+    assert '"$addFields": dict[str, Any],' in content
     assert 'MixedAggUnsetStage = TypedDict("MixedAggUnsetStage"' in content
 
 

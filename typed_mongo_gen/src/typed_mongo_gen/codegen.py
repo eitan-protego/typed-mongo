@@ -371,13 +371,14 @@ def _write_model(
     runtime_f.write(f"{model_name}Dict = dict[str, Any]\n")
     runtime_f.write(f"{model_name}Query = dict[str, Any]\n")
     runtime_f.write(f"{model_name}Fields = dict[str, Any]\n")
-    runtime_f.write(f"{model_name}NumericFields = dict[str, Any]\n")
-    runtime_f.write(f"{model_name}ArrayElementFields = dict[str, Any]\n")
-    runtime_f.write(f"{model_name}ArrayPushFields = dict[str, Any]\n")
-    runtime_f.write(f"{model_name}ArrayPopFields = dict[str, Any]\n")
+    runtime_f.write(f"type {model_name}NumericFields = dict[str, int | float]\n")
+    runtime_f.write(f"type {model_name}ArrayPath = str\n")
+    runtime_f.write(f"type {model_name}ArrayElementFields = dict[str, Any]\n")
+    runtime_f.write(f"type {model_name}ArrayPushFields = dict[str, Any]\n")
+    runtime_f.write(f"type {model_name}ArrayPopFields = dict[str, Any]\n")
     runtime_f.write(f"{model_name}UnsetFields = dict[str, Any]\n")
     runtime_f.write(f"type {model_name}RefPath = str\n")
-    runtime_f.write(f"{model_name}PipelineSetFields = dict[str, Any]\n")
+    runtime_f.write(f"type {model_name}PipelineSetFields = dict[str, Any]\n")
     runtime_f.write(f"{model_name}Update = dict[str, Any]\n")
     runtime_f.write(f"{model_name}PipelineSet = dict[str, Any]\n")
     runtime_f.write(f"{model_name}PipelineUnset = dict[str, Any]\n")
@@ -452,34 +453,26 @@ def _write_model(
     ]
     _write_typeddict(stub_f, f"{model_name}Fields", fields_entries, total=False)
 
-    # NumericFields TypedDict (only int/float fields)
-    numeric_paths = {p: t for p, t in path_types.items() if is_numeric_type(t)}
-    has_numeric = bool(numeric_paths)
+    # NumericFields: dict keyed by numeric field paths
+    numeric_path_list = sorted(p for p, t in path_types.items() if is_numeric_type(t))
+    has_numeric = bool(numeric_path_list)
     if has_numeric:
-        numeric_entries = [(p, "int | float") for p in sorted(numeric_paths)]
-        _write_typeddict(stub_f, f"{model_name}NumericFields", numeric_entries, total=False)
+        numeric_keys = ", ".join(f'"{p}"' for p in numeric_path_list)
+        stub_f.write(f"type {model_name}NumericFields = dict[Literal[{numeric_keys}], int | float]\n\n")
 
-    # ArrayElementFields TypedDict (only list fields -> element type)
-    array_paths: dict[str, str] = {}
-    for p, t in path_types.items():
-        elem = extract_list_element_type(t)
-        if elem is not None:
-            array_paths[p] = _annotation_to_source(elem, module_aliases, model_dict_names)
-    has_arrays = bool(array_paths)
+    # ArrayPath: Literal of all list-typed field paths
+    array_path_list = sorted(p for p, t in path_types.items() if extract_list_element_type(t) is not None)
+    has_arrays = bool(array_path_list)
     if has_arrays:
-        array_entries = [(p, array_paths[p]) for p in sorted(array_paths)]
-        _write_typeddict(stub_f, f"{model_name}ArrayElementFields", array_entries, total=False)
+        stub_f.write(f"type {model_name}ArrayPath = Literal[\n")
+        for p in array_path_list:
+            stub_f.write(f'    "{p}",\n')
+        stub_f.write("]\n\n")
 
-        # ArrayPushFields TypedDict (T | Mapping[Literal["$each"], list[T]] for $push/$addToSet)
-        push_entries = [
-            (p, f'{array_paths[p]} | Mapping[Literal["$each"], list[{array_paths[p]}]]')
-            for p in sorted(array_paths)
-        ]
-        _write_typeddict(stub_f, f"{model_name}ArrayPushFields", push_entries, total=False)
-
-        # ArrayPopFields TypedDict (only list fields -> Literal[1, -1])
-        pop_entries = [(p, "Literal[1, -1]") for p in sorted(array_paths)]
-        _write_typeddict(stub_f, f"{model_name}ArrayPopFields", pop_entries, total=False)
+        # ArrayElementFields, ArrayPushFields, ArrayPopFields: dict keyed by ArrayPath
+        stub_f.write(f"type {model_name}ArrayElementFields = dict[{model_name}ArrayPath, Any]\n")
+        stub_f.write(f"type {model_name}ArrayPushFields = dict[{model_name}ArrayPath, Any]\n")
+        stub_f.write(f"type {model_name}ArrayPopFields = dict[{model_name}ArrayPath, Literal[1, -1]]\n\n")
 
     # OptionalPath: all paths where the leaf field has a default (can be safely $unset)
     optional_paths = collect_optional_paths(model)
@@ -500,17 +493,8 @@ def _write_model(
         stub_f.write(f'    "${path}",\n')
     stub_f.write("]\n\n")
 
-    # PipelineSetFields TypedDict (T | RefPath | Mapping[AggExprOp, Any])
-    pipeline_set_entries = []
-    for path in sorted(path_types):
-        type_src = _annotation_to_source(path_types[path], module_aliases, model_dict_names)
-        pipeline_set_entries.append(
-            (path, f"{type_src} | {model_name}RefPath | Mapping[AggExprOp, Any]")
-        )
-    _write_typeddict(
-        stub_f, f"{model_name}PipelineSetFields", pipeline_set_entries,
-        total=False,
-    )
+    # PipelineSetFields: dict keyed by Path, values are Any (field value, RefPath, or aggregation expr)
+    stub_f.write(f"type {model_name}PipelineSetFields = dict[{model_name}Path, Any]\n\n")
 
     # Update TypedDict (unified update document)
     update_entries: list[tuple[str, str]] = [

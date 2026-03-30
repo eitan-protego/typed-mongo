@@ -164,58 +164,31 @@ class _ModelWithMixedFields(BaseModel):
     active: bool = True
 
 
-def test_numeric_fields_typed_dict(tmp_path: Path):
-    """Stub should have NumericFields with only int/float fields."""
+def test_numeric_fields_type_alias(tmp_path: Path):
+    """Stub should have NumericFields as dict[Literal[...], int | float]."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    # age, score are valid identifiers -> class syntax
-    assert "class MixedNumericFields(TypedDict, total=False):" in content
-    start = content.index("class MixedNumericFields(")
-    # Find end of class (next blank line or next class/type definition)
-    end = content.index("\n\n", start)
-    numeric_section = content[start:end]
-    assert "    age: int | float" in numeric_section
-    assert "    score: int | float" in numeric_section
-    # name, tags, active should NOT be in NumericFields
-    assert "name" not in numeric_section.split(":", 1)[1]  # after the class declaration
-    assert "tags" not in numeric_section
-    assert "active" not in numeric_section
+    assert "type MixedNumericFields = dict[Literal[" in content
+    assert "int | float]" in content
+    assert '"age"' in content
+    assert '"score"' in content
 
 
-def test_array_element_fields_typed_dict(tmp_path: Path):
-    """Stub should have ArrayElementFields with only list fields, mapped to element type."""
+def test_array_fields_type_aliases(tmp_path: Path):
+    """Stub should have ArrayPath literal and dict-based array field types."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert "class MixedArrayElementFields(TypedDict, total=False):" in content
-    assert "    tags: str" in content
-
-
-def test_array_pop_fields_typed_dict(tmp_path: Path):
-    """Stub should have ArrayPopFields with list fields mapped to Literal[1, -1]."""
-    runtime_path = tmp_path / "out.py"
-    stub_path = tmp_path / "out.pyi"
-    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
-
-    content = stub_path.read_text()
-    assert "class MixedArrayPopFields(TypedDict, total=False):" in content
-    assert "    tags: Literal[1, -1]" in content
-
-
-def test_array_push_fields_typed_dict(tmp_path: Path):
-    """Stub should have ArrayPushFields with T | Mapping[$each, list[T]] for $push/$addToSet."""
-    runtime_path = tmp_path / "out.py"
-    stub_path = tmp_path / "out.pyi"
-    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
-
-    content = stub_path.read_text()
-    assert "class MixedArrayPushFields(TypedDict, total=False):" in content
-    assert '    tags: str | Mapping[Literal["$each"], list[str]]' in content
+    assert "type MixedArrayPath = Literal[" in content
+    assert '"tags"' in content
+    assert "type MixedArrayElementFields = dict[MixedArrayPath, Any]" in content
+    assert "type MixedArrayPushFields = dict[MixedArrayPath, Any]" in content
+    assert "type MixedArrayPopFields = dict[MixedArrayPath, Literal[1, -1]]" in content
 
 
 def test_unset_fields_typed_dict(tmp_path: Path):
@@ -235,9 +208,10 @@ def test_runtime_has_new_type_aliases(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = runtime_path.read_text()
-    assert "MixedNumericFields = dict[str, Any]" in content
-    assert "MixedArrayElementFields = dict[str, Any]" in content
-    assert "MixedArrayPopFields = dict[str, Any]" in content
+    assert "MixedNumericFields" in content
+    assert "MixedArrayPath" in content
+    assert "MixedArrayElementFields" in content
+    assert "MixedArrayPopFields" in content
     assert "MixedUnsetFields = dict[str, Any]" in content
 
 
@@ -280,14 +254,14 @@ def test_update_typed_dict(tmp_path: Path):
     assert '"$pop": MixedArrayPopFields,' in update_section
 
 
-def test_pipeline_set_fields_typed_dict(tmp_path: Path):
-    """Stub should have PipelineSetFields with T | RefPath | Mapping[AggExprOp, Any]."""
+def test_pipeline_set_fields_type_alias(tmp_path: Path):
+    """Stub should have PipelineSetFields as dict[Path, Any]."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert "MixedRefPath | Mapping[AggExprOp, Any]" in content
+    assert "type MixedPipelineSetFields = dict[MixedPath, Any]" in content
 
 
 def test_pipeline_stage_union(tmp_path: Path):
@@ -554,18 +528,17 @@ def test_has_default_with_default_value():
 # --- Task 6: RefPaths ---
 
 
-def test_pipeline_set_fields_uses_generic_ref(tmp_path: Path):
-    """PipelineSetFields should use the generic RefPath for all fields."""
+def test_pipeline_set_fields_is_dict_alias(tmp_path: Path):
+    """PipelineSetFields should be a simple dict[Path, Any] type alias."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert "MixedPipelineSetFields" in content
-    # All fields use generic MixedRefPath, no per-type refs
+    assert "type MixedPipelineSetFields = dict[MixedPath, Any]" in content
+    # No per-type refs
     assert "MixedStrRefPath" not in content
     assert "MixedFloatRefPath" not in content
-    assert "MixedRefPath | Mapping[AggExprOp, Any]" in content
 
 
 # --- Task 7: OptionalPath and safe stages ---

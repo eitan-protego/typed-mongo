@@ -9,8 +9,33 @@ import tomllib
 from pathlib import Path
 
 import cyclopts
+from pydantic import BaseModel, model_validator
 
 from typed_mongo import MongoCollectionModel
+
+
+class JobConfig(BaseModel):
+    """Configuration for a single codegen job."""
+    sources: list[str] | None = None
+    output: Path | None = None
+    run_after: list[str] = []
+
+
+class ToolConfig(BaseModel):
+    """Schema for [tool.typed-mongo-gen] in pyproject.toml."""
+    defaults: JobConfig = JobConfig()
+    jobs: list[JobConfig] = []
+
+    @model_validator(mode="after")
+    def _apply_defaults(self) -> "ToolConfig":
+        for job in self.jobs:
+            if job.sources is None:
+                job.sources = self.defaults.sources
+            if job.output is None:
+                job.output = self.defaults.output
+            if not job.run_after:
+                job.run_after = self.defaults.run_after
+        return self
 from typed_mongo_gen.codegen import write_field_paths
 
 app = cyclopts.App(help="Generate MongoDB field path types from Pydantic models")
@@ -148,19 +173,22 @@ def _find_pyproject() -> Path | None:
     return None
 
 
-def _load_pyproject_config() -> dict | None:
-    """Load [tool.typed-mongo-gen] from the nearest pyproject.toml."""
+def _load_config() -> ToolConfig | None:
+    """Load and validate [tool.typed-mongo-gen] from the nearest pyproject.toml."""
     path = _find_pyproject()
     if path is None:
         return None
     with open(path, "rb") as f:
         data = tomllib.load(f)
-    return data.get("tool", {}).get("typed-mongo-gen")
+    raw = data.get("tool", {}).get("typed-mongo-gen")
+    if raw is None:
+        return None
+    return ToolConfig.model_validate(raw)
 
 
 def _run_from_config() -> None:
     """Run codegen jobs defined in pyproject.toml [tool.typed-mongo-gen]."""
-    config = _load_pyproject_config()
+    config = _load_config()
     if config is None:
         print(
             "ERROR: No [tool.typed-mongo-gen] config found in pyproject.toml "
@@ -169,31 +197,21 @@ def _run_from_config() -> None:
         )
         sys.exit(1)
 
-    defaults = config.get("defaults", {})
-    jobs = config.get("jobs", [])
-
-    if not jobs:
+    if not config.jobs:
         print(
             "ERROR: No [[tool.typed-mongo-gen.jobs]] entries in pyproject.toml.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    for i, job in enumerate(jobs):
-        sources = job.get("sources", defaults.get("sources"))
-        if not sources:
+    for i, job in enumerate(config.jobs):
+        if not job.sources:
             print(
                 f"ERROR: Job {i + 1} has no 'sources' and no default sources.",
                 file=sys.stderr,
             )
             sys.exit(1)
-
-        output_str = job.get("output", defaults.get("output"))
-        output = Path(output_str) if output_str else None
-
-        run_after = job.get("run_after", defaults.get("run_after", []))
-
-        _run_single_job(sources, output, run_after)
+        _run_single_job(job.sources, job.output, job.run_after)
 
 
 @app.default

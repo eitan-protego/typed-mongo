@@ -212,7 +212,7 @@ def collect_optional_paths(model: type[BaseModel]) -> list[str]:
     A field is optional (safe to $unset) if it has an explicit default value
     or a default_factory.
     """
-    paths: list[str] = []
+    paths: set[str] = set()
     _walk_optional(model, "", paths, frozenset())
     return sorted(paths)
 
@@ -220,7 +220,7 @@ def collect_optional_paths(model: type[BaseModel]) -> list[str]:
 def _walk_optional(
     model: type[BaseModel],
     prefix: str,
-    paths: list[str],
+    paths: set[str],
     seen: frozenset[type[BaseModel]],
 ) -> None:
     for field_name in model.model_fields:
@@ -228,7 +228,7 @@ def _walk_optional(
         full_path = f"{prefix}{alias}" if not prefix else f"{prefix}.{alias}"
 
         if has_default(model, field_name):
-            paths.append(full_path)
+            paths.add(full_path)
 
         annotation = model.model_fields[field_name].annotation
         nested_models = _extract_base_models(annotation)

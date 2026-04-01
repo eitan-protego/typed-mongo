@@ -541,6 +541,53 @@ def test_pipeline_set_fields_is_dict_alias(tmp_path: Path):
     assert "MixedFloatRefPath" not in content
 
 
+# --- Deduplication ---
+
+
+class _NestedA(BaseModel):
+    shared: str = ""
+    only_a: int = 0
+
+
+class _NestedB(BaseModel):
+    shared: str = ""
+    only_b: float = 0.0
+
+
+class _ModelWithUnionNested(BaseModel):
+    name: str
+    nested: _NestedA | _NestedB
+
+
+def test_optional_path_no_duplicates(tmp_path: Path):
+    """OptionalPath should not contain duplicate entries from union variants."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Dup": _ModelWithUnionNested})
+
+    content = stub_path.read_text()
+    assert "type DupOptionalPath = Literal[" in content
+    opt_start = content.index("type DupOptionalPath = Literal[")
+    opt_end = content.index("]", opt_start) + 1
+    opt_section = content[opt_start:opt_end]
+    # "nested.shared" should appear exactly once despite being in both _NestedA and _NestedB
+    assert opt_section.count('"nested.shared"') == 1
+
+
+def test_all_literal_types_deduplicated(tmp_path: Path):
+    """All Literal type aliases should have no duplicate entries."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Dup": _ModelWithUnionNested})
+
+    content = stub_path.read_text()
+    # Check every Literal[...] block for duplicates
+    import re
+    for m in re.finditer(r'type \w+ = Literal\[\n(.*?)\]', content, re.DOTALL):
+        entries = re.findall(r'"([^"]+)"', m.group(1))
+        assert len(entries) == len(set(entries)), f"Duplicate entries in: {m.group(0)}"
+
+
 # --- Task 7: OptionalPath and safe stages ---
 
 

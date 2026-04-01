@@ -105,6 +105,7 @@ type AggExprOp = Literal[
 
 
 def combine_ops[T](*ops: NontrivialOp[T]) -> Op[T]:
+    # Cast needed: merging TypedDicts via comprehension produces dict, not a union member
     return cast(Op[T], {k: v for op in ops for k, v in op.items()})
 
 

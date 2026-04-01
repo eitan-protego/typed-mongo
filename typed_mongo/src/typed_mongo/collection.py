@@ -114,25 +114,23 @@ class TypedCollection[
 
     # --- Read operations ---
 
-    async def find_one(self, filter: Query) -> M | None:  # noqa: A002
+    async def find_one(self, filter: Query) -> M | None:
         """Find a single document matching the filter."""
         doc = await self._collection.find_one(filter)
         if doc is None:
             return None
         return self._model.model_validate(doc)
 
-    def find(self, filter: Query | None = None) -> TypedCursor[M]:  # noqa: A002
+    def find(self, filter: Query | None = None) -> TypedCursor[M]:
         """Find documents matching the filter."""
         cursor = self._collection.find(filter)
         return TypedCursor(self._model, cursor)
 
-    async def count_documents(self, filter: Query) -> int:  # noqa: A002
+    async def count_documents(self, filter: Query) -> int:
         """Count documents matching the filter."""
         return await self._collection.count_documents(filter)
 
-    async def distinct(  # noqa: A002
-        self, key: Path, filter: Query | None = None
-    ) -> list[Any]:
+    async def distinct(self, key: Path, filter: Query | None = None) -> list[Any]:
         """Get distinct values for a field."""
         return await self._collection.distinct(key, filter=filter)
 
@@ -157,6 +155,7 @@ class TypedCollection[
         results as model instances. With type_unsafe_pipeline_suffix, returns
         a raw AsyncCommandCursor since the output shape is unknown.
         """
+        # TypedDicts are dicts at runtime but pyright can't assign TypedDict → dict[str, Any]
         full_pipeline: list[dict[str, Any]] = list(pipeline)  # pyright: ignore[reportAssignmentType]
         if type_unsafe_pipeline_suffix:
             full_pipeline.extend(type_unsafe_pipeline_suffix)  # pyright: ignore[reportArgumentType]
@@ -168,6 +167,7 @@ class TypedCollection[
 
     async def insert_one(self, document: M | Model) -> InsertOneResult:
         """Insert a document (model instance or dict)."""
+        # Model TypedDict is a dict at runtime; pyright can't narrow M | Model through ternary
         doc: dict[str, Any] = (
             document.model_dump() if isinstance(document, BaseModel) else document
         )  # pyright: ignore[reportAssignmentType]
@@ -180,6 +180,7 @@ class TypedCollection[
         upsert: bool = False,
     ) -> UpdateResult:
         """Replace a document (model instance or dict)."""
+        # Model TypedDict is a dict at runtime; pyright can't narrow M | Model through ternary
         doc: dict[str, Any] = (
             replacement.model_dump()
             if isinstance(replacement, BaseModel)
@@ -189,7 +190,7 @@ class TypedCollection[
 
     async def update_one(
         self,
-        filter: Query,  # noqa: A002
+        filter: Query,
         update: Update,
         upsert: bool = False,
         array_filters: list[dict[str, Any]] | None = None,
@@ -201,7 +202,7 @@ class TypedCollection[
 
     async def update_many(
         self,
-        filter: Query,  # noqa: A002
+        filter: Query,
         update: Update,
         upsert: bool = False,
         array_filters: list[dict[str, Any]] | None = None,
@@ -211,7 +212,7 @@ class TypedCollection[
             filter, update, upsert=upsert, array_filters=array_filters
         )
 
-    async def delete_one(self, filter: Query) -> DeleteResult:  # noqa: A002
+    async def delete_one(self, filter: Query) -> DeleteResult:
         """Delete a single document matching the filter."""
         return await self._collection.delete_one(filter)
 

@@ -18,7 +18,7 @@ class JobConfig(BaseModel):
     """Configuration for a single codegen job."""
     sources: list[str] | None = None
     output: Path | None = None
-    run_after: list[str] = []
+    formatter: list[str] = []
 
 
 class ToolConfig(BaseModel):
@@ -33,8 +33,8 @@ class ToolConfig(BaseModel):
                 job.sources = self.defaults.sources
             if job.output is None:
                 job.output = self.defaults.output
-            if not job.run_after:
-                job.run_after = self.defaults.run_after
+            if not job.formatter:
+                job.formatter = self.defaults.formatter
         return self
 from typed_mongo_gen.codegen import write_field_paths
 
@@ -99,10 +99,10 @@ def _expand_sources(
     return paths
 
 
-def _run_after_commands(
+def _run_formatters(
     commands: list[str], runtime_path: Path, stub_path: Path
 ) -> None:
-    """Run post-generation commands, appending generated file paths as arguments."""
+    """Run formatter commands on generated files, appending file paths as arguments."""
     for cmd_str in commands:
         argv = shlex.split(cmd_str)
         argv.append(str(runtime_path.resolve()))
@@ -120,7 +120,7 @@ def _run_after_commands(
 def _run_single_job(
     source_patterns: list[str],
     output: Path | None,
-    run_after: list[str],
+    formatter: list[str],
 ) -> None:
     """Run a single codegen job: expand sources, collect models, generate, run post-commands."""
     # Determine output paths for exclusion
@@ -159,8 +159,8 @@ def _run_single_job(
     print(f"  -> {runtime_path}")
     print(f"  -> {stub_path}")
 
-    if run_after:
-        _run_after_commands(run_after, runtime_path, stub_path)
+    if formatter:
+        _run_formatters(formatter, runtime_path, stub_path)
 
 
 def _find_pyproject() -> Path | None:
@@ -211,7 +211,7 @@ def _run_from_config() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        _run_single_job(job.sources, job.output, job.run_after)
+        _run_single_job(job.sources, job.output, job.formatter)
 
 
 @app.default
@@ -219,7 +219,7 @@ def generate(
     sources: list[str] | None = None,
     *,
     output: Path | None = None,
-    run_after: list[str] | None = None,
+    formatter: list[str] | None = None,
 ) -> None:
     """Generate MongoDB field path types from Pydantic models.
 
@@ -230,19 +230,19 @@ def generate(
                  When omitted, runs jobs defined in pyproject.toml.
         output: Output path for generated runtime .py file.
                 A stub .pyi file will be written alongside it.
-        run_after: Commands to run on the generated files after generation.
+        formatter: Formatter commands to run on generated files.
                    Each command receives the .py and .pyi paths as arguments.
 
     Example:
         typed-mongo-gen 'app/models/**/*.py' --output app/models/_generated_types.py
-        typed-mongo-gen models/users.py --run-after 'ruff format' --run-after 'ruff check --fix'
+        typed-mongo-gen models/users.py --formatter 'ruff format' --formatter 'ruff check --fix'
         typed-mongo-gen  # runs jobs from pyproject.toml
     """
     if not sources:
         _run_from_config()
         return
 
-    _run_single_job(sources, output, run_after or [])
+    _run_single_job(sources, output, formatter or [])
 
 
 if __name__ == "__main__":

@@ -132,8 +132,8 @@ _MODELS_SOURCE = dedent("""\
 """)
 
 
-def test_run_after_commands(tmp_path: Path):
-    """--run-after commands should be invoked with generated file paths."""
+def test_formatter_commands(tmp_path: Path):
+    """--formatter commands should be invoked with generated file paths."""
     models_file = tmp_path / "models.py"
     models_file.write_text(_MODELS_SOURCE)
 
@@ -149,7 +149,7 @@ def test_run_after_commands(tmp_path: Path):
             str(models_file),
             "--output",
             str(output_file),
-            "--run-after",
+            "--formatter",
             f"python3 -c \"import sys; open('{marker}', 'w').write('\\n'.join(sys.argv[1:]))\"",
         ],
         cwd=Path(__file__).parent.parent.parent,
@@ -204,7 +204,7 @@ def test_pyproject_config_defaults(tmp_path: Path):
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(dedent(f"""\
         [tool.typed-mongo-gen.defaults]
-        run_after = ["python3 -c \\"import sys; open('{marker}', 'w').write('ok')\\""]
+        formatter = ["python3 -c \\"import sys; open('{marker}', 'w').write('ok')\\""]
 
         [[tool.typed-mongo-gen.jobs]]
         sources = ["{models_file}"]

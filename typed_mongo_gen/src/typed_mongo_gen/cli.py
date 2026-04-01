@@ -2,12 +2,15 @@
 
 import importlib
 import importlib.util
+import shlex
+import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import cyclopts
 
-from typed_mongo import get_registry
+from typed_mongo import clear_registry, get_registry
 from typed_mongo_gen.codegen import write_field_paths
 
 app = cyclopts.App(help="Generate MongoDB field path types from Pydantic models")
@@ -69,27 +72,33 @@ def _import_sources(sources: list[str]) -> None:
                 sys.exit(1)
 
 
-@app.default
-def generate(
-    sources: list[str],
-    output: Path | None = None,
+def _run_after_commands(
+    commands: list[str], runtime_path: Path, stub_path: Path
 ) -> None:
-    """Generate MongoDB field path types from Pydantic models.
+    """Run post-generation commands, appending generated file paths as arguments."""
+    for cmd_str in commands:
+        argv = shlex.split(cmd_str)
+        argv.append(str(runtime_path.resolve()))
+        argv.append(str(stub_path.resolve()))
+        print(f"  Running: {' '.join(shlex.quote(a) for a in argv)}")
+        result = subprocess.run(argv)
+        if result.returncode != 0:
+            print(
+                f"ERROR: Command failed with exit code {result.returncode}: {cmd_str}",
+                file=sys.stderr,
+            )
+            sys.exit(result.returncode)
 
-    Args:
-        sources: Modules or file paths containing MongoCollectionModel subclasses.
-                 Auto-detects whether each source is a file path or module name.
-        output: Output path for generated runtime .py file.
-                A stub .pyi file will be written alongside it.
 
-    Example:
-        typed-mongo-gen my_app.models --output generated_types.py
-        typed-mongo-gen models/users.py models/products.py --output types.py
-    """
-    # Import all sources to populate registry
+def _run_single_job(
+    sources: list[str],
+    output: Path | None,
+    run_after: list[str],
+) -> None:
+    """Run a single codegen job: import sources, generate files, run post-commands."""
+    clear_registry()
     _import_sources(sources)
 
-    # Get registered models
     registry = get_registry()
     if not registry:
         print(
@@ -98,7 +107,6 @@ def generate(
         )
         sys.exit(1)
 
-    # Generate types
     if output is None:
         output = Path(sources[0]).with_name("_generated_types.py")
     runtime_path = output
@@ -108,9 +116,99 @@ def generate(
     print(f"Generated {len(registry)} model types:")
     for model_name in sorted(registry.keys()):
         print(f"  - {model_name}")
-    print("\nOutput written to:")
-    print(f"  {runtime_path.resolve()}")
-    print(f"  {stub_path.resolve()}")
+    print(f"  -> {runtime_path.resolve()}")
+    print(f"  -> {stub_path.resolve()}")
+
+    if run_after:
+        _run_after_commands(run_after, runtime_path, stub_path)
+
+
+def _find_pyproject() -> Path | None:
+    """Walk up from cwd to find the nearest pyproject.toml."""
+    current = Path.cwd().resolve()
+    for parent in [current, *current.parents]:
+        candidate = parent / "pyproject.toml"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _load_pyproject_config() -> dict | None:
+    """Load [tool.typed-mongo-gen] from the nearest pyproject.toml."""
+    path = _find_pyproject()
+    if path is None:
+        return None
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    return data.get("tool", {}).get("typed-mongo-gen")
+
+
+def _run_from_config() -> None:
+    """Run codegen jobs defined in pyproject.toml [tool.typed-mongo-gen]."""
+    config = _load_pyproject_config()
+    if config is None:
+        print(
+            "ERROR: No [tool.typed-mongo-gen] config found in pyproject.toml "
+            "and no sources provided on command line.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    defaults = config.get("defaults", {})
+    jobs = config.get("jobs", [])
+
+    if not jobs:
+        print(
+            "ERROR: No [[tool.typed-mongo-gen.jobs]] entries in pyproject.toml.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    for i, job in enumerate(jobs):
+        sources = job.get("sources", defaults.get("sources"))
+        if not sources:
+            print(
+                f"ERROR: Job {i + 1} has no 'sources' and no default sources.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        output_str = job.get("output", defaults.get("output"))
+        output = Path(output_str) if output_str else None
+
+        run_after = job.get("run_after", defaults.get("run_after", []))
+
+        _run_single_job(sources, output, run_after)
+
+
+@app.default
+def generate(
+    sources: list[str] | None = None,
+    *,
+    output: Path | None = None,
+    run_after: list[str] | None = None,
+) -> None:
+    """Generate MongoDB field path types from Pydantic models.
+
+    Args:
+        sources: Modules or file paths containing MongoCollectionModel subclasses.
+                 Auto-detects whether each source is a file path or module name.
+                 When omitted, runs jobs defined in pyproject.toml.
+        output: Output path for generated runtime .py file.
+                A stub .pyi file will be written alongside it.
+        run_after: Commands to run on the generated files after generation.
+                   Each command receives the .py and .pyi paths as arguments.
+
+    Example:
+        typed-mongo-gen my_app.models --output generated_types.py
+        typed-mongo-gen models/users.py --run-after 'ruff format' --run-after 'ruff check --fix'
+        typed-mongo-gen  # runs jobs from pyproject.toml
+    """
+    if not sources:
+        _run_from_config()
+        return
+
+    _run_single_job(sources, output, run_after or [])
 
 
 if __name__ == "__main__":

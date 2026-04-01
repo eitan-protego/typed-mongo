@@ -641,7 +641,12 @@ def _write_typed_dump(
     runtime_f.write("    return model.model_dump()\n")
 
     # Stub: @overload for each top-level model + each nested model
-    for model_cls, dict_name in model_dict_names.items():
+    # Sort subclasses before parents so overloads don't shadow each other
+    sorted_models = sorted(
+        model_dict_names.items(),
+        key=lambda item: (-len(item[0].__mro__), item[0].__qualname__),
+    )
+    for model_cls, dict_name in sorted_models:
         model_ref = _annotation_to_source(model_cls, module_aliases)
         stub_f.write("@overload\n")
         stub_f.write(f"def typed_dump(model: {model_ref}) -> {dict_name}: ...\n")

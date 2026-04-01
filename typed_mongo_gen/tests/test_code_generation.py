@@ -468,6 +468,25 @@ def test_typed_dump_with_nested_models(tmp_path: Path):
     assert "@overload\ndef typed_dump(model: _Inner) -> _InnerDict: ..." in content
 
 
+def test_typed_dump_subclass_before_parent(tmp_path: Path):
+    """typed_dump overloads should list subclasses before parents to avoid shadowing."""
+
+    class _Parent(BaseModel):
+        x: int
+
+    class _Child(_Parent):
+        y: str
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Parent": _Parent, "Child": _Child})
+
+    content = stub_path.read_text()
+    child_pos = content.index("def typed_dump(model: _Child)")
+    parent_pos = content.index("def typed_dump(model: _Parent)")
+    assert child_pos < parent_pos, "Subclass overload must come before parent overload"
+
+
 def test_generated_update_code_compiles(tmp_path: Path):
     """Generated stub with all update types should compile."""
     runtime_path = tmp_path / "out.py"

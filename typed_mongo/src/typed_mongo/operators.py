@@ -51,19 +51,56 @@ them using the combine_ops function.
 # --- Aggregation expression operators (for pipeline updates) ---
 
 type AggExprOp = Literal[
-    "$add", "$subtract", "$multiply", "$divide", "$mod",
-    "$concat", "$substr", "$toLower", "$toUpper", "$trim",
-    "$cond", "$ifNull", "$switch",
-    "$arrayElemAt", "$first", "$last", "$size", "$filter", "$map",
-    "$mergeObjects", "$objectToArray", "$arrayToObject",
-    "$toString", "$toInt", "$toDouble", "$toBool",
-    "$type", "$literal",
-    "$dateToString", "$dateFromString",
-    "$abs", "$ceil", "$floor", "$round",
-    "$max", "$min", "$avg", "$sum",
-    "$and", "$or", "$not",
-    "$eq", "$ne", "$gt", "$gte", "$lt", "$lte",
-    "$in", "$setUnion", "$setIntersection",
+    "$add",
+    "$subtract",
+    "$multiply",
+    "$divide",
+    "$mod",
+    "$concat",
+    "$substr",
+    "$toLower",
+    "$toUpper",
+    "$trim",
+    "$cond",
+    "$ifNull",
+    "$switch",
+    "$arrayElemAt",
+    "$first",
+    "$last",
+    "$size",
+    "$filter",
+    "$map",
+    "$mergeObjects",
+    "$objectToArray",
+    "$arrayToObject",
+    "$toString",
+    "$toInt",
+    "$toDouble",
+    "$toBool",
+    "$type",
+    "$literal",
+    "$dateToString",
+    "$dateFromString",
+    "$abs",
+    "$ceil",
+    "$floor",
+    "$round",
+    "$max",
+    "$min",
+    "$avg",
+    "$sum",
+    "$and",
+    "$or",
+    "$not",
+    "$eq",
+    "$ne",
+    "$gt",
+    "$gte",
+    "$lt",
+    "$lte",
+    "$in",
+    "$setUnion",
+    "$setIntersection",
 ]
 
 
@@ -78,18 +115,17 @@ def combine_ops[T](*ops: NontrivialOp[T]) -> Op[T]:
 # is only needed in codegen'd .pyi stubs which use typing_extensions.TypedDict.
 
 
-class GroupStageValue(TypedDict):
-    _id: Any
+GroupStage = TypedDict("GroupStage", {"$group": dict[str, Any]})
 
-
-GroupStage = TypedDict("GroupStage", {"$group": GroupStageValue})
-
-BucketStageValue = TypedDict("BucketStageValue", {
-    "groupBy": Any,
-    "boundaries": list[Any],
-    "default": Any,
-    "output": NotRequired[dict[str, Any]],
-})
+BucketStageValue = TypedDict(
+    "BucketStageValue",
+    {
+        "groupBy": Any,
+        "boundaries": list[Any],
+        "default": Any,
+        "output": NotRequired[dict[str, Any]],
+    },
+)
 BucketStage = TypedDict("BucketStage", {"$bucket": BucketStageValue})
 
 
@@ -104,12 +140,15 @@ UnwindStage = TypedDict("UnwindStage", {"$unwind": str | dict[str, Any]})
 
 ProjectStage = TypedDict("ProjectStage", {"$project": dict[str, Any]})
 
-LookupStageValue = TypedDict("LookupStageValue", {
-    "from": str,
-    "localField": str,
-    "foreignField": str,
-    "as": str,
-})
+LookupStageValue = TypedDict(
+    "LookupStageValue",
+    {
+        "from": str,
+        "localField": str,
+        "foreignField": str,
+        "as": str,
+    },
+)
 LookupStage = TypedDict("LookupStage", {"$lookup": LookupStageValue})
 
 # Minimally annotated stages
@@ -135,22 +174,56 @@ GeoNearStage = TypedDict("GeoNearStage", {"$geoNear": dict[str, Any]})
 DensifyStage = TypedDict("DensifyStage", {"$densify": dict[str, Any]})
 FillStage = TypedDict("FillStage", {"$fill": dict[str, Any]})
 DocumentsStage = TypedDict("DocumentsStage", {"$documents": list[dict[str, Any]]})
-SetWindowFieldsStage = TypedDict("SetWindowFieldsStage", {"$setWindowFields": dict[str, Any]})
+SetWindowFieldsStage = TypedDict(
+    "SetWindowFieldsStage", {"$setWindowFields": dict[str, Any]}
+)
 ChangeStreamStage = TypedDict("ChangeStreamStage", {"$changeStream": dict[str, Any]})
 CollStatsStage = TypedDict("CollStatsStage", {"$collStats": dict[str, Any]})
 CurrentOpStage = TypedDict("CurrentOpStage", {"$currentOp": dict[str, Any]})
 IndexStatsStage = TypedDict("IndexStatsStage", {"$indexStats": dict[str, Any]})
 ListSessionsStage = TypedDict("ListSessionsStage", {"$listSessions": dict[str, Any]})
-PlanCacheStatsStage = TypedDict("PlanCacheStatsStage", {"$planCacheStats": dict[str, Any]})
+PlanCacheStatsStage = TypedDict(
+    "PlanCacheStatsStage", {"$planCacheStats": dict[str, Any]}
+)
 SearchStage = TypedDict("SearchStage", {"$search": dict[str, Any]})
 SearchMetaStage = TypedDict("SearchMetaStage", {"$searchMeta": dict[str, Any]})
 
 type AggregationStep = (
-    GroupStage | BucketStage | BucketAutoStage | UnwindStage | ProjectStage | LookupStage
-    | MatchStage | SortStage | LimitStage | SkipStage | SetStage | AddFieldsStage
-    | UnsetStage | CountStage | ReplaceRootStage | ReplaceWithStage | OutStage | MergeStage
-    | FacetStage | GraphLookupStage | RedactStage | SampleStage | UnionWithStage
-    | SortByCountStage | GeoNearStage | DensifyStage | FillStage | DocumentsStage
-    | SetWindowFieldsStage | ChangeStreamStage | CollStatsStage | CurrentOpStage
-    | IndexStatsStage | ListSessionsStage | PlanCacheStatsStage | SearchStage | SearchMetaStage
+    GroupStage
+    | BucketStage
+    | BucketAutoStage
+    | UnwindStage
+    | ProjectStage
+    | LookupStage
+    | MatchStage
+    | SortStage
+    | LimitStage
+    | SkipStage
+    | SetStage
+    | AddFieldsStage
+    | UnsetStage
+    | CountStage
+    | ReplaceRootStage
+    | ReplaceWithStage
+    | OutStage
+    | MergeStage
+    | FacetStage
+    | GraphLookupStage
+    | RedactStage
+    | SampleStage
+    | UnionWithStage
+    | SortByCountStage
+    | GeoNearStage
+    | DensifyStage
+    | FillStage
+    | DocumentsStage
+    | SetWindowFieldsStage
+    | ChangeStreamStage
+    | CollStatsStage
+    | CurrentOpStage
+    | IndexStatsStage
+    | ListSessionsStage
+    | PlanCacheStatsStage
+    | SearchStage
+    | SearchMetaStage
 )

@@ -20,6 +20,7 @@ from typing import Any, overload
 
 from pydantic import BaseModel
 from pymongo.asynchronous.collection import AsyncCollection
+from pymongo.asynchronous.command_cursor import AsyncCommandCursor
 from pymongo.asynchronous.cursor import AsyncCursor
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.results import DeleteResult, InsertOneResult, UpdateResult
@@ -143,30 +144,33 @@ class TypedCollection[
         self,
         pipeline: list[PipelineStage],
         type_unsafe_pipeline_suffix: list[AggregationStep],
-    ) -> AsyncCursor[dict[str, Any]]: ...
+    ) -> AsyncCommandCursor[dict[str, Any]]: ...
 
     async def aggregate(
         self,
         pipeline: list[PipelineStage],
         type_unsafe_pipeline_suffix: list[AggregationStep] | None = None,
-    ) -> TypedCursor[M] | AsyncCursor[dict[str, Any]]:
+    ) -> TypedCursor[M] | AsyncCommandCursor[dict[str, Any]]:
         """Run an aggregation pipeline.
 
         With only safe pipeline stages, returns TypedCursor[M] that validates
         results as model instances. With type_unsafe_pipeline_suffix, returns
-        a raw AsyncCursor since the output shape is unknown.
+        a raw AsyncCommandCursor since the output shape is unknown.
         """
         full_pipeline: list[dict[str, Any]] = list(pipeline)  # pyright: ignore[reportAssignmentType]
         if type_unsafe_pipeline_suffix:
-            full_pipeline.extend(type_unsafe_pipeline_suffix)  # pyright: ignore[reportAssignmentType]
+            full_pipeline.extend(type_unsafe_pipeline_suffix)  # pyright: ignore[reportArgumentType]
             return await self._collection.aggregate(full_pipeline)
-        return TypedCursor(self._model, await self._collection.aggregate(full_pipeline))
+        cursor: Any = await self._collection.aggregate(full_pipeline)
+        return TypedCursor(self._model, cursor)
 
     # --- Write operations ---
 
     async def insert_one(self, document: M | Model) -> InsertOneResult:
         """Insert a document (model instance or dict)."""
-        doc: dict[str, Any] = document.model_dump() if isinstance(document, BaseModel) else document  # pyright: ignore[reportAssignmentType]
+        doc: dict[str, Any] = (
+            document.model_dump() if isinstance(document, BaseModel) else document
+        )  # pyright: ignore[reportAssignmentType]
         return await self._collection.insert_one(doc)
 
     async def replace_one(
@@ -176,7 +180,11 @@ class TypedCollection[
         upsert: bool = False,
     ) -> UpdateResult:
         """Replace a document (model instance or dict)."""
-        doc: dict[str, Any] = replacement.model_dump() if isinstance(replacement, BaseModel) else replacement  # pyright: ignore[reportAssignmentType]
+        doc: dict[str, Any] = (
+            replacement.model_dump()
+            if isinstance(replacement, BaseModel)
+            else replacement
+        )  # pyright: ignore[reportAssignmentType]
         return await self._collection.replace_one(filter, doc, upsert=upsert)
 
     async def update_one(

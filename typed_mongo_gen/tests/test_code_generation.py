@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-from typed_mongo_gen.codegen import _write_typeddict, write_field_paths
+from typed_mongo_gen.codegen import write_typeddict, write_field_paths
 from typed_mongo_gen.introspect import has_default
 
 
@@ -445,7 +445,10 @@ def test_typed_dump_stub_overloads(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = stub_path.read_text()
-    assert "@overload\ndef typed_dump(model: _ModelWithMixedFields) -> MixedDict: ..." in content
+    assert (
+        "@overload\ndef typed_dump(model: _ModelWithMixedFields) -> MixedDict: ..."
+        in content
+    )
 
 
 def test_typed_dump_with_nested_models(tmp_path: Path):
@@ -497,13 +500,13 @@ def test_generated_update_code_compiles(tmp_path: Path):
     compile(stub_content, "<test>", "exec")
 
 
-# --- Task 3: _write_typeddict PEP 728 ---
+# --- Task 3: write_typeddict PEP 728 ---
 
 
-def test_write_typeddict_function_call_syntax():
-    """_write_typeddict should use function-call syntax for non-identifier keys."""
+def testwrite_typeddict_function_call_syntax():
+    """write_typeddict should use function-call syntax for non-identifier keys."""
     f = io.StringIO()
-    _write_typeddict(f, "TestStage", [("$match", "dict[str, Any]")])
+    write_typeddict(f, "TestStage", [("$match", "dict[str, Any]")])
     content = f.getvalue()
     assert 'TestStage = TypedDict("TestStage"' in content
 
@@ -518,7 +521,9 @@ def test_stub_header_imports_typing(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"TestModel": _TestModel})
 
     content = stub_path.read_text()
-    typing_line = [l for l in content.splitlines() if l.startswith("from typing import")][0]
+    typing_line = [
+        line for line in content.splitlines() if line.startswith("from typing import")
+    ][0]
     assert "TypedDict" in typing_line
     assert "NotRequired" in typing_line
     assert "Required" in typing_line
@@ -602,7 +607,8 @@ def test_all_literal_types_deduplicated(tmp_path: Path):
     content = stub_path.read_text()
     # Check every Literal[...] block for duplicates
     import re
-    for m in re.finditer(r'type \w+ = Literal\[\n(.*?)\]', content, re.DOTALL):
+
+    for m in re.finditer(r"type \w+ = Literal\[\n(.*?)\]", content, re.DOTALL):
         entries = re.findall(r'"([^"]+)"', m.group(1))
         assert len(entries) == len(set(entries)), f"Duplicate entries in: {m.group(0)}"
 
@@ -716,7 +722,10 @@ def test_aggregation_step_function_stub(tmp_path: Path):
 
     content = stub_path.read_text()
     assert "type MixedUnsafeStage = " in content
-    assert "def mixed_aggregation_step(step: MixedUnsafeStage) -> AggregationStep: ..." in content
+    assert (
+        "def mixed_aggregation_step(step: MixedUnsafeStage) -> AggregationStep: ..."
+        in content
+    )
 
 
 def test_aggregation_step_function_runtime(tmp_path: Path):
@@ -726,7 +735,9 @@ def test_aggregation_step_function_runtime(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
 
     content = runtime_path.read_text()
-    assert "def mixed_aggregation_step(step: dict[str, Any]) -> dict[str, Any]:" in content
+    assert (
+        "def mixed_aggregation_step(step: dict[str, Any]) -> dict[str, Any]:" in content
+    )
     assert "    return step" in content
 
 

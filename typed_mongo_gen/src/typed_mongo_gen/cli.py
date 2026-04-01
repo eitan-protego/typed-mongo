@@ -12,10 +12,12 @@ import cyclopts
 from pydantic import BaseModel, model_validator
 
 from typed_mongo import MongoCollectionModel
+from typed_mongo_gen.codegen import write_field_paths
 
 
 class JobConfig(BaseModel):
     """Configuration for a single codegen job."""
+
     sources: list[str] | None = None
     output: Path | None = None
     formatter: list[str] = []
@@ -23,6 +25,7 @@ class JobConfig(BaseModel):
 
 class ToolConfig(BaseModel):
     """Schema for [tool.typed-mongo-gen] in pyproject.toml."""
+
     defaults: JobConfig = JobConfig()
     jobs: list[JobConfig] = []
 
@@ -36,7 +39,7 @@ class ToolConfig(BaseModel):
             if not job.formatter:
                 job.formatter = self.defaults.formatter
         return self
-from typed_mongo_gen.codegen import write_field_paths
+
 
 app = cyclopts.App(help="Generate MongoDB field path types from Pydantic models")
 
@@ -59,7 +62,7 @@ def _resolve_module_name(source_path: Path) -> str:
     return f"__typed_mongo_gen_{source_path.stem}__"
 
 
-def _collect_models(
+def collect_models(
     source_paths: list[Path],
 ) -> dict[str, type[MongoCollectionModel]]:
     """Run each source file and collect MongoCollectionModel subclasses from its globals."""
@@ -82,9 +85,7 @@ def _collect_models(
     return models
 
 
-def _expand_sources(
-    patterns: list[str], exclude: set[Path]
-) -> list[Path]:
+def expand_sources(patterns: list[str], exclude: set[Path]) -> list[Path]:
     """Expand glob patterns to concrete file paths, excluding specified paths."""
     paths: list[Path] = []
     for pattern in patterns:
@@ -99,9 +100,7 @@ def _expand_sources(
     return paths
 
 
-def _run_formatters(
-    commands: list[str], runtime_path: Path, stub_path: Path
-) -> None:
+def _run_formatters(commands: list[str], runtime_path: Path, stub_path: Path) -> None:
     """Run formatter commands on generated files, appending file paths as arguments."""
     for cmd_str in commands:
         argv = shlex.split(cmd_str)
@@ -135,7 +134,7 @@ def _run_single_job(
     stub_path = output.with_suffix(".pyi").resolve()
     exclude = {runtime_path, stub_path}
 
-    source_paths = _expand_sources(source_patterns, exclude)
+    source_paths = expand_sources(source_patterns, exclude)
     if not source_paths:
         print(
             f"ERROR: No source files found after exclusions for patterns: {source_patterns}",
@@ -143,7 +142,7 @@ def _run_single_job(
         )
         sys.exit(1)
 
-    models = _collect_models(source_paths)
+    models = collect_models(source_paths)
     if not models:
         print(
             f"ERROR: No MongoCollectionModel subclasses found in: {[str(p) for p in source_paths]}",
@@ -191,8 +190,7 @@ def _run_from_config() -> None:
     config = _load_config()
     if config is None:
         print(
-            "ERROR: No [tool.typed-mongo-gen] config found in pyproject.toml "
-            "and no sources provided on command line.",
+            "ERROR: No [tool.typed-mongo-gen] config found in pyproject.toml and no sources provided on command line.",
             file=sys.stderr,
         )
         sys.exit(1)

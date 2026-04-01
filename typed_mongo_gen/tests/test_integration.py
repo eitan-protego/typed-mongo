@@ -172,13 +172,15 @@ def test_pyproject_config_jobs(tmp_path: Path):
     output_file = tmp_path / "types.py"
 
     pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text(dedent(f"""\
+    pyproject.write_text(
+        dedent(f"""\
         [tool.typed-mongo-gen]
 
         [[tool.typed-mongo-gen.jobs]]
         sources = ["{models_file}"]
         output = "{output_file}"
-    """))
+    """)
+    )
 
     result = subprocess.run(
         [sys.executable, "-m", "typed_mongo_gen.cli"],
@@ -202,14 +204,16 @@ def test_pyproject_config_defaults(tmp_path: Path):
     marker = tmp_path / "ran.txt"
 
     pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text(dedent(f"""\
+    pyproject.write_text(
+        dedent(f"""\
         [tool.typed-mongo-gen.defaults]
         formatter = ["python3 -c \\"import sys; open('{marker}', 'w').write('ok')\\""]
 
         [[tool.typed-mongo-gen.jobs]]
         sources = ["{models_file}"]
         output = "{output_file}"
-    """))
+    """)
+    )
 
     result = subprocess.run(
         [sys.executable, "-m", "typed_mongo_gen.cli"],

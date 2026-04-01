@@ -5,18 +5,6 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
-import pytest
-
-from typed_mongo import clear_registry
-
-
-@pytest.fixture(autouse=True)
-def clean_registry():
-    """Clear registry before and after each test."""
-    clear_registry()
-    yield
-    clear_registry()
-
 
 def test_end_to_end_generation(tmp_path: Path):
     """Test complete flow: define models -> run CLI -> verify output."""

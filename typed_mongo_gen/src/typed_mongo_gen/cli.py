@@ -1,7 +1,7 @@
 """Command-line interface for typed-mongo-gen."""
 
-import importlib
-import importlib.util
+import glob
+import runpy
 import shlex
 import subprocess
 import sys
@@ -10,19 +10,14 @@ from pathlib import Path
 
 import cyclopts
 
-from typed_mongo import clear_registry, get_registry
+from typed_mongo import MongoCollectionModel
 from typed_mongo_gen.codegen import write_field_paths
 
 app = cyclopts.App(help="Generate MongoDB field path types from Pydantic models")
 
 
 def _resolve_module_name(source_path: Path) -> str:
-    """Resolve the dotted Python module name for a file path via sys.path.
-
-    Compares the absolute file path against each sys.path entry and returns
-    the dotted module name if the file is importable from that entry.
-    Falls back to a synthetic name if no match is found.
-    """
+    """Resolve the dotted Python module name for a file path via sys.path."""
     abs_path = source_path.resolve()
     for entry in sys.path:
         if not entry:
@@ -32,44 +27,51 @@ def _resolve_module_name(source_path: Path) -> str:
             rel = abs_path.relative_to(entry_path)
         except ValueError:
             continue
-        # Convert path to dotted name, stripping .py
         parts = list(rel.parts)
         if parts[-1].endswith(".py"):
             parts[-1] = parts[-1][:-3]
         return ".".join(parts)
-    # Fallback: synthetic name (imports will be unresolvable, but won't crash)
-    return f"__typed_mongo_gen_import_{source_path.stem}__"
+    return f"__typed_mongo_gen_{source_path.stem}__"
 
 
-def _import_sources(sources: list[str]) -> None:
-    """Import modules or files to populate the model registry.
+def _collect_models(
+    source_paths: list[Path],
+) -> dict[str, type[MongoCollectionModel]]:
+    """Run each source file and collect MongoCollectionModel subclasses from its globals."""
+    models: dict[str, type[MongoCollectionModel]] = {}
+    for path in source_paths:
+        run_name = _resolve_module_name(path)
+        try:
+            ns = runpy.run_path(str(path), run_name=run_name)
+        except Exception as e:
+            print(f"ERROR: Failed to run {path}: {e}", file=sys.stderr)
+            sys.exit(1)
+        for obj in ns.values():
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, MongoCollectionModel)
+                and obj is not MongoCollectionModel
+                and "__collection_name__" in obj.__dict__
+            ):
+                models[obj.__name__] = obj
+    return models
 
-    Args:
-        sources: List of module names or file paths to import
-    """
-    for source in sources:
-        source_path = Path(source)
 
-        if source_path.exists() and source_path.is_file():
-            # File path - resolve real dotted name so __module__ is correct
-            module_name = _resolve_module_name(source_path)
-            if module_name in sys.modules:
-                continue
-            spec = importlib.util.spec_from_file_location(module_name, source_path)
-            if spec is None or spec.loader is None:
-                print(f"ERROR: Cannot load file: {source}", file=sys.stderr)
-                sys.exit(1)
-
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[spec.name] = module
-            spec.loader.exec_module(module)
-        else:
-            # Module path - use standard import
-            try:
-                importlib.import_module(source)
-            except ModuleNotFoundError as e:
-                print(f"ERROR: Cannot import module '{source}': {e}", file=sys.stderr)
-                sys.exit(1)
+def _expand_sources(
+    patterns: list[str], exclude: set[Path]
+) -> list[Path]:
+    """Expand glob patterns to concrete file paths, excluding specified paths."""
+    paths: list[Path] = []
+    for pattern in patterns:
+        expanded = glob.glob(pattern, recursive=True)
+        if not expanded:
+            print(f"ERROR: No files matched pattern: {pattern}", file=sys.stderr)
+            sys.exit(1)
+        for p_str in sorted(expanded):
+            p = Path(p_str).resolve()
+            if p not in exclude:
+                paths.append(p)
+    return paths
 
 
 def _run_after_commands(
@@ -91,33 +93,46 @@ def _run_after_commands(
 
 
 def _run_single_job(
-    sources: list[str],
+    source_patterns: list[str],
     output: Path | None,
     run_after: list[str],
 ) -> None:
-    """Run a single codegen job: import sources, generate files, run post-commands."""
-    clear_registry()
-    _import_sources(sources)
+    """Run a single codegen job: expand sources, collect models, generate, run post-commands."""
+    # Determine output paths for exclusion
+    if output is None:
+        first_pattern = source_patterns[0]
+        first_expanded = glob.glob(first_pattern, recursive=True)
+        if first_expanded:
+            output = Path(first_expanded[0]).with_name("_generated_types.py")
+        else:
+            output = Path("_generated_types.py")
+    runtime_path = output.resolve()
+    stub_path = output.with_suffix(".pyi").resolve()
+    exclude = {runtime_path, stub_path}
 
-    registry = get_registry()
-    if not registry:
+    source_paths = _expand_sources(source_patterns, exclude)
+    if not source_paths:
         print(
-            f"ERROR: No MongoCollectionModel subclasses found in sources: {sources}",
+            f"ERROR: No source files found after exclusions for patterns: {source_patterns}",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    if output is None:
-        output = Path(sources[0]).with_name("_generated_types.py")
-    runtime_path = output
-    stub_path = output.with_suffix(".pyi")
-    write_field_paths(runtime_path, stub_path, registry)
+    models = _collect_models(source_paths)
+    if not models:
+        print(
+            f"ERROR: No MongoCollectionModel subclasses found in: {[str(p) for p in source_paths]}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-    print(f"Generated {len(registry)} model types:")
-    for model_name in sorted(registry.keys()):
+    write_field_paths(runtime_path, stub_path, models)
+
+    print(f"Generated {len(models)} model types:")
+    for model_name in sorted(models.keys()):
         print(f"  - {model_name}")
-    print(f"  -> {runtime_path.resolve()}")
-    print(f"  -> {stub_path.resolve()}")
+    print(f"  -> {runtime_path}")
+    print(f"  -> {stub_path}")
 
     if run_after:
         _run_after_commands(run_after, runtime_path, stub_path)
@@ -191,8 +206,9 @@ def generate(
     """Generate MongoDB field path types from Pydantic models.
 
     Args:
-        sources: Modules or file paths containing MongoCollectionModel subclasses.
-                 Auto-detects whether each source is a file path or module name.
+        sources: File paths or glob patterns for files containing MongoCollectionModel
+                 subclasses. Glob patterns like 'app/models/**/*.py' are expanded.
+                 The output file is automatically excluded from glob matches.
                  When omitted, runs jobs defined in pyproject.toml.
         output: Output path for generated runtime .py file.
                 A stub .pyi file will be written alongside it.
@@ -200,7 +216,7 @@ def generate(
                    Each command receives the .py and .pyi paths as arguments.
 
     Example:
-        typed-mongo-gen my_app.models --output generated_types.py
+        typed-mongo-gen 'app/models/**/*.py' --output app/models/_generated_types.py
         typed-mongo-gen models/users.py --run-after 'ruff format' --run-after 'ruff check --fix'
         typed-mongo-gen  # runs jobs from pyproject.toml
     """

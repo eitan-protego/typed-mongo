@@ -15,8 +15,8 @@ Type parameters:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, overload
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, overload
 
 from pydantic import BaseModel
 from pymongo.asynchronous.collection import AsyncCollection
@@ -28,8 +28,10 @@ from pymongo.results import DeleteResult, InsertOneResult, UpdateResult
 from typed_mongo.model import MongoCollectionModel
 from typed_mongo.operators import AggregationStep
 
+_Direction = Literal[1, -1]
 
-class TypedCursor[M: BaseModel]:
+
+class TypedCursor[M: BaseModel, Path: str]:
     """Typed cursor wrapper that yields validated model instances.
 
     Wraps an ``AsyncCursor`` and validates each document into model ``M``
@@ -40,30 +42,45 @@ class TypedCursor[M: BaseModel]:
         self._model: type[M] = model
         self._cursor: AsyncCursor[dict[str, Any]] = cursor
 
-    def sort(self, *args: Any, **kwargs: Any) -> TypedCursor[M]:
-        """Sort results. Returns self for chaining."""
-        self._cursor = self._cursor.sort(*args, **kwargs)
+    @overload
+    def sort(
+        self, key_or_list: Path | Sequence[Path], direction: _Direction
+    ) -> TypedCursor[M, Path]: ...
+
+    @overload
+    def sort(
+        self, key_or_list: Sequence[tuple[Path, _Direction]] | Mapping[Path, _Direction]
+    ) -> TypedCursor[M, Path]: ...
+
+    def sort(
+        self,
+        key_or_list: Path
+        | Sequence[Path | tuple[Path, _Direction]]
+        | Mapping[Path, _Direction],
+        direction: _Direction | None = None,
+    ) -> TypedCursor[M, Path]:
+        if direction is not None:
+            self._cursor = self._cursor.sort(key_or_list, direction)  # pyright: ignore[reportArgumentType]
+        else:
+            self._cursor = self._cursor.sort(key_or_list)  # pyright: ignore[reportArgumentType]
         return self
 
-    def skip(self, count: int) -> TypedCursor[M]:
-        """Skip results. Returns self for chaining."""
+    def skip(self, count: int) -> TypedCursor[M, Path]:
         self._cursor = self._cursor.skip(count)
         return self
 
-    def limit(self, count: int) -> TypedCursor[M]:
-        """Limit results. Returns self for chaining."""
+    def limit(self, count: int) -> TypedCursor[M, Path]:
         self._cursor = self._cursor.limit(count)
         return self
 
     async def to_list(self, length: int | None = None) -> list[M]:
-        """Fetch all documents and validate each into model M."""
         if length is not None:
             docs = await self._cursor.to_list(length)
         else:
             docs = await self._cursor.to_list()
         return [self._model.model_validate(doc) for doc in docs]
 
-    def __aiter__(self) -> TypedCursor[M]:
+    def __aiter__(self) -> TypedCursor[M, Path]:
         return self
 
     async def __anext__(self) -> M:
@@ -121,7 +138,7 @@ class TypedCollection[
             return None
         return self._model.model_validate(doc)
 
-    def find(self, filter: Query | None = None) -> TypedCursor[M]:
+    def find(self, filter: Query | None = None) -> TypedCursor[M, Path]:
         """Find documents matching the filter."""
         cursor = self._collection.find(filter)
         return TypedCursor(self._model, cursor)
@@ -135,7 +152,9 @@ class TypedCollection[
         return await self._collection.distinct(key, filter=filter)
 
     @overload
-    async def aggregate(self, pipeline: list[PipelineStage]) -> TypedCursor[M]: ...
+    async def aggregate(
+        self, pipeline: list[PipelineStage]
+    ) -> TypedCursor[M, Path]: ...
 
     @overload
     async def aggregate(
@@ -148,7 +167,7 @@ class TypedCollection[
         self,
         pipeline: list[PipelineStage],
         type_unsafe_pipeline_suffix: list[AggregationStep] | None = None,
-    ) -> TypedCursor[M] | AsyncCommandCursor[dict[str, Any]]:
+    ) -> TypedCursor[M, Path] | AsyncCommandCursor[dict[str, Any]]:
         """Run an aggregation pipeline.
 
         With only safe pipeline stages, returns TypedCursor[M] that validates

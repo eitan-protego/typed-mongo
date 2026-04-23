@@ -278,9 +278,9 @@ def _build_module_aliases(all_imports: set[tuple[str, str]]) -> dict[str, str]:
     for module, name in user_imports:
         name_to_modules.setdefault(name, []).append(module)
 
-    conflicting_modules = {
+    conflicting_modules = sorted(
         m for modules in name_to_modules.values() if len(modules) > 1 for m in modules
-    }
+    )
     return {m: _module_alias(m) for m in conflicting_modules}
 
 
@@ -805,7 +805,13 @@ def _topological_order(
         graph[model] = deps
 
     ts = TopologicalSorter(graph)
-    return list(ts.static_order())
+    ts.prepare()
+    result: list[type[BaseModel]] = []
+    while ts.is_active():
+        ready = sorted(ts.get_ready(), key=lambda m: m.__qualname__)
+        result.extend(ready)
+        ts.done(*ready)
+    return result
 
 
 def write_field_paths(

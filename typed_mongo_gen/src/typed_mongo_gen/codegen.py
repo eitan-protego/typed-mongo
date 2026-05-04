@@ -340,7 +340,9 @@ Do not edit manually. Regenerate with:
     stub_f.write("from pymongo.asynchronous.database import AsyncDatabase\n")
     stub_f.write("from typed_mongo import TypedCollection\n")
     stub_f.write("from collections.abc import Mapping\n")
-    stub_f.write("from typed_mongo.operators import AggExprOp, AggregationStep, Op\n")
+    stub_f.write(
+        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, Op\n"
+    )
     stub_f.write("\n")
 
 
@@ -450,7 +452,7 @@ def _write_model(
     ]
     write_typeddict(stub_f, f"{model_name}Dict", model_entries)
 
-    # Query TypedDict (with Op[T]; list[T] fields use Op[T | list[T]])
+    # Query TypedDict (with Op[T]; list[T] fields use Op[T | list[T]] | ElemMatch[...])
     query_entries: list[tuple[str, str]] = []
     for path in sorted(path_types):
         type_src = _annotation_to_source(
@@ -462,7 +464,14 @@ def _write_model(
             query_val_src = _query_value_type_src(
                 path_types[path], module_aliases, model_dict_names
             )
-            query_entries.append((path, f"Op[{query_val_src}]"))
+            op_type = f"Op[{query_val_src}]"
+            elem_type = extract_list_element_type(path_types[path])
+            if elem_type is not None:
+                elem_src = _annotation_to_source(
+                    elem_type, module_aliases, model_dict_names
+                )
+                op_type = f"{op_type} | ElemMatch[NontrivialOp[{elem_src}]]"
+            query_entries.append((path, op_type))
     query_entries.append(("$expr", "dict[str, Any]"))
     query_entries.append(("$and", f'list["{model_name}Query"]'))
     query_entries.append(("$or", f'list["{model_name}Query"]'))

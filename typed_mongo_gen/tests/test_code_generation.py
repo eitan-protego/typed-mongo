@@ -104,7 +104,7 @@ def test_generated_code_compiles(tmp_path: Path):
 
 
 def test_list_field_query_type_is_op_element_or_list(tmp_path: Path):
-    """Query TypedDict for list[T] fields should use Op[T | list[T]]."""
+    """Query TypedDict for list[T] fields should use Op[T | list[T]] | ElemMatch[...]."""
 
     class _ModelWithList(BaseModel):
         tags: list[str]
@@ -115,12 +115,12 @@ def test_list_field_query_type_is_op_element_or_list(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"ModelWithList": _ModelWithList})
 
     content = stub_path.read_text()
-    assert '"tags": Op[str | list[str]],' in content
-    assert '"ids": Op[int | list[int]],' in content
+    assert '"tags": Op[str | list[str]] | ElemMatch[NontrivialOp[str]],' in content
+    assert '"ids": Op[int | list[int]] | ElemMatch[NontrivialOp[int]],' in content
 
 
 def test_nested_list_field_query_type_includes_all_levels(tmp_path: Path):
-    """Query TypedDict for list[list[list[T]]] should use Op[T | list[T] | list[list[T]] | list[list[list[T]]]]."""
+    """Query TypedDict for list[list[list[T]]] should include all nesting levels and ElemMatch."""
 
     class _ModelWithNestedList(BaseModel):
         matrix: list[list[list[str]]]
@@ -133,13 +133,14 @@ def test_nested_list_field_query_type_includes_all_levels(tmp_path: Path):
 
     content = stub_path.read_text()
     expected = (
-        '"matrix": Op[str | list[str] | list[list[str]] | list[list[list[str]]]],'
+        '"matrix": Op[str | list[str] | list[list[str]] | list[list[list[str]]]]'
+        " | ElemMatch[NontrivialOp[list[list[str]]]],"
     )
     assert expected in content
 
 
 def test_union_with_list_expands_list_member(tmp_path: Path):
-    """Query TypedDict for list[Foo] | None and list[Foo] | str should expand list to Op[Foo | list[Foo]] and keep union."""
+    """Query TypedDict for list[Foo] | None and list[Foo] | str should expand list and add ElemMatch."""
 
     class _ModelWithOptionalList(BaseModel):
         tags: list[str] | None
@@ -152,8 +153,10 @@ def test_union_with_list_expands_list_member(tmp_path: Path):
     )
 
     content = stub_path.read_text()
-    assert '"tags": Op[str | list[str] | None],' in content
-    assert '"ids": Op[int | list[int] | str],' in content
+    assert (
+        '"tags": Op[str | list[str] | None] | ElemMatch[NontrivialOp[str]],' in content
+    )
+    assert '"ids": Op[int | list[int] | str] | ElemMatch[NontrivialOp[int]],' in content
 
 
 class _ModelWithMixedFields(BaseModel):
@@ -528,7 +531,10 @@ def test_stub_header_imports_typing(tmp_path: Path):
     assert "NotRequired" in typing_line
     assert "Required" in typing_line
     assert "typing_extensions" not in content
-    assert "from typed_mongo.operators import AggExprOp, AggregationStep, Op" in content
+    assert (
+        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, Op"
+        in content
+    )
 
 
 # --- Task 5: has_default ---

@@ -32,13 +32,11 @@ type ListOp[T] = Mapping[Literal["$in", "$nin"], Sequence[T]]
 
 Exists = TypedDict("Exists", {"$exists": bool})
 Regex = TypedDict("Regex", {"$regex": str})
-ElemMatch = TypedDict("ElemMatch", {"$elemMatch": Mapping[str, Any]})
-NonGenericOp = TypedDict(
-    "NonGenericOp", {"$exists": bool, "$regex": str, "$elemMatch": Mapping[str, Any]}
-)
+type ElemMatch[T] = Mapping[Literal["$elemMatch"], T]
+NonGenericOp = TypedDict("NonGenericOp", {"$exists": bool, "$regex": str})
 
 # --- Union of all operators ---
-type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Exists | Regex | ElemMatch
+type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Exists | Regex
 type Op[T] = T | NontrivialOp[T]
 """
 Due to limitations of Python's type system, Op cannot match a predicate that combines

@@ -86,10 +86,12 @@ def test_regex_operator():
 
 
 def test_elem_match_operator():
-    """Test ElemMatch operator (non-generic)."""
+    """Test ElemMatch operator (generic)."""
 
-    elem_match: ElemMatch = {"$elemMatch": {"status": "active"}}
-    assert elem_match["$elemMatch"]["status"] == "active"
+    from typed_mongo.operators import NontrivialOp
+
+    elem_match: ElemMatch[NontrivialOp[int]] = {"$elemMatch": {"$gt": 5}}
+    assert elem_match["$elemMatch"]["$gt"] == 5
 
 
 def test_op_union_with_raw_value():

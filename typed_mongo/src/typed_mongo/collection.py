@@ -19,11 +19,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Literal, overload
 
 from pydantic import BaseModel
+from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.command_cursor import AsyncCommandCursor
 from pymongo.asynchronous.cursor import AsyncCursor
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.results import DeleteResult, InsertOneResult, UpdateResult
 
 from typed_mongo.model import MongoCollectionModel

@@ -11,12 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v7
-      - uses: astral-sh/ruff-action@v3
         with:
-          args: check --output-format=github
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: format --check
+          enable-cache: true
+      - run: uv sync --locked --dev
+      - run: uv run ruff check --output-format=github
+      - run: uv run ruff format --check
 
   type-check:
     runs-on: ubuntu-latest

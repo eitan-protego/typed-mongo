@@ -6,7 +6,6 @@ from textwrap import dedent
 import pytest
 from typed_mongo_gen.cli import collect_models, expand_sources
 
-
 _MODEL_SOURCE = dedent("""\
     from typed_mongo import MongoCollectionModel
 

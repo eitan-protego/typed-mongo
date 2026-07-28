@@ -49,6 +49,7 @@ def test_end_to_end_generation(tmp_path: Path):
         cwd=Path(__file__).parent.parent.parent,  # typed_mongo_gen root
         capture_output=True,
         text=True,
+        check=False,
     )
 
     # Verify success
@@ -114,6 +115,7 @@ def test_cli_errors_on_empty_registry(tmp_path: Path):
         cwd=Path(__file__).parent.parent.parent,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 1
@@ -153,6 +155,7 @@ def test_formatter_commands(tmp_path: Path):
             f"python3 -c \"import sys; open('{marker}', 'w').write('\\n'.join(sys.argv[1:]))\"",
         ],
         cwd=Path(__file__).parent.parent.parent,
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -187,6 +190,7 @@ def test_pyproject_config_jobs(tmp_path: Path):
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0, result.stderr
@@ -220,6 +224,7 @@ def test_pyproject_config_defaults(tmp_path: Path):
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0, result.stderr
@@ -236,6 +241,7 @@ def test_pyproject_no_config_no_sources(tmp_path: Path):
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 1

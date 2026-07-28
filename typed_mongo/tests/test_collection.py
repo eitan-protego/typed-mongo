@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock
 
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
-
 from typed_mongo.collection import TypedCollection
 from typed_mongo.model import MongoCollectionModel
 

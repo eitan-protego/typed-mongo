@@ -196,21 +196,21 @@ def test_typed_collection_has_update_many():
 def test_aggregation_step_types_exist():
     """AggregationStep and individual stage TypedDicts should be importable."""
     from typed_mongo.operators import (
+        AddFieldsStage,
         AggregationStep,
-        GroupStage,
-        BucketStage,
         BucketAutoStage,
-        UnwindStage,
-        ProjectStage,
+        BucketStage,
+        CountStage,
+        GroupStage,
+        LimitStage,
         LookupStage,
         MatchStage,
-        SortStage,
-        LimitStage,
-        SkipStage,
+        ProjectStage,
         SetStage,
-        AddFieldsStage,
+        SkipStage,
+        SortStage,
         UnsetStage,
-        CountStage,
+        UnwindStage,
     )
 
     for stage_type in [

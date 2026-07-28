@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-from typed_mongo_gen.codegen import write_typeddict, write_field_paths
+from typed_mongo_gen.codegen import write_field_paths, write_typeddict
 from typed_mongo_gen.introspect import has_default
 
 
@@ -524,9 +524,9 @@ def test_stub_header_imports_typing(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"TestModel": _TestModel})
 
     content = stub_path.read_text()
-    typing_line = [
+    typing_line = next(
         line for line in content.splitlines() if line.startswith("from typing import")
-    ][0]
+    )
     assert "TypedDict" in typing_line
     assert "NotRequired" in typing_line
     assert "Required" in typing_line

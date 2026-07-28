@@ -5,10 +5,10 @@ import runpy
 import shlex
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 import cyclopts
+import tomllib
 from pydantic import BaseModel, model_validator
 
 from typed_mongo import MongoCollectionModel
@@ -56,8 +56,7 @@ def _resolve_module_name(source_path: Path) -> str:
         except ValueError:
             continue
         parts = list(rel.parts)
-        if parts[-1].endswith(".py"):
-            parts[-1] = parts[-1][:-3]
+        parts[-1] = parts[-1].removesuffix(".py")
         return ".".join(parts)
     return f"__typed_mongo_gen_{source_path.stem}__"
 
@@ -71,7 +70,7 @@ def collect_models(
         run_name = _resolve_module_name(path)
         try:
             ns = runpy.run_path(str(path), run_name=run_name)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"ERROR: Failed to run {path}: {e}", file=sys.stderr)
             sys.exit(1)
         for obj in ns.values():
@@ -107,7 +106,7 @@ def _run_formatters(commands: list[str], runtime_path: Path, stub_path: Path) ->
         argv.append(str(runtime_path.resolve()))
         argv.append(str(stub_path.resolve()))
         print(f"  Running: {' '.join(shlex.quote(a) for a in argv)}")
-        result = subprocess.run(argv)
+        result = subprocess.run(argv, check=False)
         if result.returncode != 0:
             print(
                 f"ERROR: Command failed with exit code {result.returncode}: {cmd_str}",

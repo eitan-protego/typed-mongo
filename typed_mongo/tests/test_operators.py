@@ -1,5 +1,7 @@
 """Tests for MongoDB operator TypedDict definitions."""
 
+from bson import Regex as BsonRegex
+
 from typed_mongo.collection import TypedCollection
 from typed_mongo.operators import (
     ElemMatch,
@@ -83,6 +85,34 @@ def test_regex_operator():
 
     regex_query: Regex = {"$regex": "^test.*"}
     assert regex_query["$regex"] == "^test.*"
+
+
+def test_regex_operator_accepts_bson_regex():
+    regex_query: Regex = {"$regex": BsonRegex("^test.*", "i")}
+    value: Op[str] = regex_query
+
+    assert value["$regex"] == BsonRegex("^test.*", "i")
+
+
+def test_op_accepts_bson_regex():
+    value: Op[str] = BsonRegex("^test.*", "i")
+    optional_value: Op[str | None] = BsonRegex("^test.*", "i")
+
+    assert value == BsonRegex("^test.*", "i")
+    assert optional_value == value
+
+
+def test_op_rejects_bson_regex_for_non_string_fields():
+    value: Op[int] = BsonRegex("^test.*")  # pyright: ignore[reportAssignmentType]
+
+    assert isinstance(value, BsonRegex)
+
+
+def test_regex_operator_accepts_options():
+    regex_query: Regex = {"$regex": "^test.*", "$options": "i"}
+    value: Op[str] = regex_query
+
+    assert value["$options"] == "i"
 
 
 def test_elem_match_operator():

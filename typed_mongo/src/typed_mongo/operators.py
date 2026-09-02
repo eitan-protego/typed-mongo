@@ -10,7 +10,14 @@ Usage — callers write plain dict literals; the type checker validates::
 """
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import Any, Literal, NotRequired, Protocol, TypedDict, cast
+
+from bson import Regex as BsonRegex
+
+
+class _RegexValue[T_co](Protocol):
+    @property
+    def pattern(self) -> T_co: ...
 
 # --- Generic operators (parameterized by field value type T) ---
 # Unfortunately, TypedDict can either be generic (class syntax) or contain keys
@@ -31,13 +38,22 @@ type ListOp[T] = Mapping[Literal["$in", "$nin"], Sequence[T]]
 # --- Non-generic operators ---
 
 Exists = TypedDict("Exists", {"$exists": bool})
-Regex = TypedDict("Regex", {"$regex": str})
+Regex = TypedDict(
+    "Regex", {"$regex": str | BsonRegex[str], "$options": NotRequired[str]}
+)
 type ElemMatch[T] = Mapping[Literal["$elemMatch"], T]
-NonGenericOp = TypedDict("NonGenericOp", {"$exists": bool, "$regex": str})
+NonGenericOp = TypedDict(
+    "NonGenericOp",
+    {
+        "$exists": bool,
+        "$regex": str | BsonRegex[str],
+        "$options": NotRequired[str],
+    },
+)
 
 # --- Union of all operators ---
 type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Exists | Regex
-type Op[T] = T | NontrivialOp[T]
+type Op[T] = T | _RegexValue[T] | NontrivialOp[T]
 """
 Due to limitations of Python's type system, Op cannot match a predicate that combines
 different types of operators. If you need to use both generic and non-generic operators

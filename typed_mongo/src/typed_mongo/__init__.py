@@ -17,6 +17,7 @@ from typed_mongo.operators import (
     Nin,
     Op,
     Regex,
+    StrOp,
 )
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "Nin",
     "Op",
     "Regex",
+    "StrOp",
     "TypedCollection",
     "TypedCursor",
     "clear_registry",

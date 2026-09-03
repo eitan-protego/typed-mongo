@@ -19,6 +19,7 @@ class _RegexValue[T_co](Protocol):
     @property
     def pattern(self) -> T_co: ...
 
+
 # --- Generic operators (parameterized by field value type T) ---
 # Unfortunately, TypedDict can either be generic (class syntax) or contain keys
 # that are not valid field names (function call syntax) but not both.

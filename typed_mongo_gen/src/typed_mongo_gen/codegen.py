@@ -17,13 +17,13 @@ from typing import Any, Literal, get_args, get_origin
 from pydantic import BaseModel
 
 from typed_mongo_gen.introspect import (
-    extract_base_models,
-    resolve_alias,
     collect_field_path_types,
     collect_field_paths,
     collect_optional_paths,
+    extract_base_models,
     extract_list_element_type,
     is_numeric_type,
+    resolve_alias,
 )
 
 _BUILTINS = frozenset({str, int, float, bool, list, dict, bytes, type(None)})
@@ -63,14 +63,12 @@ def write_typeddict(
     if _all_valid_identifiers(keys):
         # Class syntax
         f.write(f"class {name}(TypedDict{extra_kwargs}):\n")
-        for key, type_str in entries:
-            f.write(f"    {key}: {type_str}\n")
+        f.writelines(f"    {key}: {type_str}\n" for key, type_str in entries)
         f.write("\n")
     else:
         # Function-call syntax
         f.write(f'{name} = TypedDict("{name}", {{\n')
-        for key, type_str in entries:
-            f.write(f'    "{key}": {type_str},\n')
+        f.writelines(f'    "{key}": {type_str},\n' for key, type_str in entries)
         f.write(f"}}{extra_kwargs})\n\n")
 
 
@@ -437,8 +435,7 @@ def _write_model(
     # Stub: Path Literal
     paths = collect_field_paths(model)
     stub_f.write(f"type {model_name}Path = Literal[\n")
-    for path in paths:
-        stub_f.write(f'    "{path}",\n')
+    stub_f.writelines(f'    "{path}",\n' for path in paths)
     stub_f.write("]\n\n")
 
     # Dict TypedDict (top-level fields only, total=True — matches model_dump() output)
@@ -505,8 +502,7 @@ def _write_model(
     has_arrays = bool(array_path_list)
     if has_arrays:
         stub_f.write(f"type {model_name}ArrayPath = Literal[\n")
-        for p in array_path_list:
-            stub_f.write(f'    "{p}",\n')
+        stub_f.writelines(f'    "{p}",\n' for p in array_path_list)
         stub_f.write("]\n\n")
 
         # ArrayElementFields, ArrayPushFields, ArrayPopFields: dict keyed by ArrayPath

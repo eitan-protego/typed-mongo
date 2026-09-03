@@ -19,6 +19,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Literal, overload
 
 from pydantic import BaseModel
+from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.command_cursor import AsyncCommandCursor
 from pymongo.asynchronous.cursor import AsyncCursor
@@ -131,9 +132,11 @@ class TypedCollection[
 
     # --- Read operations ---
 
-    async def find_one(self, filter: Query) -> M | None:
+    async def find_one(
+        self, filter: Query, *, session: AsyncClientSession | None = None
+    ) -> M | None:
         """Find a single document matching the filter."""
-        doc = await self._collection.find_one(filter)
+        doc = await self._collection.find_one(filter, session=session)
         if doc is None:
             return None
         return self._model.model_validate(doc)
@@ -184,13 +187,15 @@ class TypedCollection[
 
     # --- Write operations ---
 
-    async def insert_one(self, document: M | Model) -> InsertOneResult:
+    async def insert_one(
+        self, document: M | Model, *, session: AsyncClientSession | None = None
+    ) -> InsertOneResult:
         """Insert a document (model instance or dict)."""
         # Model TypedDict is a dict at runtime; pyright can't narrow M | Model through ternary
         doc: dict[str, Any] = (
             document.model_dump() if isinstance(document, BaseModel) else document
         )  # pyright: ignore[reportAssignmentType]
-        return await self._collection.insert_one(doc)
+        return await self._collection.insert_one(doc, session=session)
 
     async def replace_one(
         self,
@@ -213,10 +218,16 @@ class TypedCollection[
         update: Update,
         upsert: bool = False,
         array_filters: list[dict[str, Any]] | None = None,
+        *,
+        session: AsyncClientSession | None = None,
     ) -> UpdateResult:
         """Type-safe update of a single document."""
         return await self._collection.update_one(
-            filter, update, upsert=upsert, array_filters=array_filters
+            filter,
+            update,
+            upsert=upsert,
+            array_filters=array_filters,
+            session=session,
         )
 
     async def update_many(
@@ -231,9 +242,11 @@ class TypedCollection[
             filter, update, upsert=upsert, array_filters=array_filters
         )
 
-    async def delete_one(self, filter: Query) -> DeleteResult:
+    async def delete_one(
+        self, filter: Query, *, session: AsyncClientSession | None = None
+    ) -> DeleteResult:
         """Delete a single document matching the filter."""
-        return await self._collection.delete_one(filter)
+        return await self._collection.delete_one(filter, session=session)
 
     # --- Escape hatch ---
 

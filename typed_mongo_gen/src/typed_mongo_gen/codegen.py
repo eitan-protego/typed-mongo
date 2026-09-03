@@ -352,7 +352,7 @@ Do not edit manually. Regenerate with:
     stub_f.write("from typed_mongo import TypedCollection\n")
     stub_f.write("from collections.abc import Mapping\n")
     stub_f.write(
-        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, Op, Regex, StrOp\n"
+        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, NontrivialStrOp, Op, StrOp\n"
     )
     stub_f.write("\n")
 
@@ -483,8 +483,10 @@ def _write_model(
                     elem_type, module_aliases, model_dict_names
                 )
                 elem_op = f"NontrivialOp[{elem_src}]"
-                if _contains_str(elem_type):
-                    elem_op = f"{elem_op} | Regex"
+                if elem_type is str:
+                    elem_op = "NontrivialStrOp"
+                elif _contains_str(elem_type):
+                    elem_op = f"{elem_op} | NontrivialStrOp"
                 op_type = f"{op_type} | ElemMatch[{elem_op}]"
             query_entries.append((path, op_type))
     query_entries.append(("$expr", "dict[str, Any]"))

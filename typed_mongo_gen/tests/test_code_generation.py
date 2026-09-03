@@ -135,8 +135,7 @@ def test_list_field_query_type_is_op_element_or_list(tmp_path: Path):
 
     content = stub_path.read_text()
     assert (
-        '"tags": Op[str | list[str]] | StrOp'
-        + " | ElemMatch[NontrivialOp[str] | Regex],"
+        '"tags": Op[str | list[str]] | StrOp' + " | ElemMatch[NontrivialStrOp],"
         in content
     )
     assert '"ids": Op[int | list[int]] | ElemMatch[NontrivialOp[int]],' in content
@@ -157,7 +156,8 @@ def test_nested_list_field_query_type_includes_all_levels(tmp_path: Path):
     content = stub_path.read_text()
     expected = (
         '"matrix": Op[str | list[str] | list[list[str]] | list[list[list[str]]]]'
-        " | StrOp | ElemMatch[NontrivialOp[list[list[str]]] | Regex],"
+        " | StrOp"
+        " | ElemMatch[NontrivialOp[list[list[str]]] | NontrivialStrOp],"
     )
     assert expected in content
 
@@ -177,8 +177,7 @@ def test_union_with_list_expands_list_member(tmp_path: Path):
 
     content = stub_path.read_text()
     assert (
-        '"tags": Op[str | list[str] | None] | StrOp'
-        + " | ElemMatch[NontrivialOp[str] | Regex],"
+        '"tags": Op[str | list[str] | None] | StrOp' + " | ElemMatch[NontrivialStrOp],"
         in content
     )
     assert (
@@ -560,7 +559,7 @@ def test_stub_header_imports_typing(tmp_path: Path):
     assert "Required" in typing_line
     assert "typing_extensions" not in content
     assert (
-        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, Op"
+        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, NontrivialStrOp, Op, StrOp"
         in content
     )
 

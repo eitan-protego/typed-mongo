@@ -50,7 +50,8 @@ NonGenericOp = TypedDict(
 # --- Union of all operators ---
 type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Exists
 type Op[T] = T | NontrivialOp[T]
-type StrOp = Op[str] | Regex | BsonRegex[str]
+type NontrivialStrOp = NontrivialOp[str] | Regex
+type StrOp = str | BsonRegex[str] | NontrivialStrOp
 """
 Due to limitations of Python's type system, Op cannot match a predicate that combines
 different types of operators. If you need to use both generic and non-generic operators

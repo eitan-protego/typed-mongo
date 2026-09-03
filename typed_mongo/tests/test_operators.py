@@ -14,6 +14,7 @@ from typed_mongo.operators import (
     Lte,
     Ne,
     Nin,
+    NontrivialStrOp,
     Op,
     Regex,
     StrOp,
@@ -168,6 +169,12 @@ def test_str_op_union_with_regex():
     """Test that StrOp includes Regex."""
 
     value: StrOp = {"$regex": "pattern"}
+    assert value["$regex"] == "pattern"
+
+
+def test_nontrivial_str_op_includes_regex_operator():
+    value: NontrivialStrOp = {"$regex": "pattern", "$options": "i"}
+
     assert value["$regex"] == "pattern"
 
 

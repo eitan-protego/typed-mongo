@@ -15,8 +15,10 @@ from typed_mongo.operators import (
     Lte,
     Ne,
     Nin,
+    NontrivialStrOp,
     Op,
     Regex,
+    StrOp,
 )
 
 __all__ = [
@@ -33,8 +35,10 @@ __all__ = [
     "MongoCollectionModel",
     "Ne",
     "Nin",
+    "NontrivialStrOp",
     "Op",
     "Regex",
+    "StrOp",
     "TypedCollection",
     "TypedCursor",
     "clear_registry",

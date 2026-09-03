@@ -71,7 +71,7 @@ def test_end_to_end_generation(tmp_path: Path):
     assert '"name",' in stub_content
     assert '"price",' in stub_content
     assert 'ProductQuery = TypedDict("ProductQuery"' in stub_content
-    assert '"name": Op[str],' in stub_content
+    assert '"name": StrOp,' in stub_content
     assert '"price": Op[float],' in stub_content
 
     # Verify update types are generated

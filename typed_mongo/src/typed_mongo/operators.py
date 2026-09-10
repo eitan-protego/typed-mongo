@@ -38,14 +38,6 @@ Regex = TypedDict(
     "Regex", {"$regex": str | BsonRegex[str], "$options": NotRequired[str]}
 )
 type ElemMatch[T] = Mapping[Literal["$elemMatch"], T]
-NonGenericOp = TypedDict(
-    "NonGenericOp",
-    {
-        "$exists": bool,
-        "$regex": str | BsonRegex[str],
-        "$options": NotRequired[str],
-    },
-)
 
 # --- Union of all operators ---
 type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Exists

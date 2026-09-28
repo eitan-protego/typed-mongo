@@ -1,5 +1,7 @@
 """Tests for MongoDB operator TypedDict definitions."""
 
+from bson import Regex as BsonRegex
+
 from typed_mongo.collection import TypedCollection
 from typed_mongo.operators import (
     ElemMatch,
@@ -12,8 +14,10 @@ from typed_mongo.operators import (
     Lte,
     Ne,
     Nin,
+    NontrivialStrOp,
     Op,
     Regex,
+    StrOp,
 )
 
 
@@ -85,6 +89,34 @@ def test_regex_operator():
     assert regex_query["$regex"] == "^test.*"
 
 
+def test_regex_operator_accepts_bson_regex():
+    regex_query: Regex = {"$regex": BsonRegex("^test.*", "i")}
+    value: StrOp = regex_query
+
+    assert value["$regex"] == BsonRegex("^test.*", "i")
+
+
+def test_str_op_accepts_bson_regex():
+    value: StrOp = BsonRegex("^test.*", "i")
+
+    assert value == BsonRegex("^test.*", "i")
+
+
+def test_op_rejects_bson_regex():
+    string_value: Op[str] = BsonRegex("^test.*")  # pyright: ignore[reportAssignmentType]
+    value: Op[int] = BsonRegex("^test.*")  # pyright: ignore[reportAssignmentType]
+
+    assert isinstance(string_value, BsonRegex)
+    assert isinstance(value, BsonRegex)
+
+
+def test_regex_operator_accepts_options():
+    regex_query: Regex = {"$regex": "^test.*", "$options": "i"}
+    value: StrOp = regex_query
+
+    assert value["$options"] == "i"
+
+
 def test_elem_match_operator():
     """Test ElemMatch operator (generic)."""
 
@@ -133,10 +165,16 @@ def test_op_union_with_exists():
     assert value["$exists"] is True
 
 
-def test_op_union_with_regex():
-    """Test that Op[T] includes Regex."""
+def test_str_op_union_with_regex():
+    """Test that StrOp includes Regex."""
 
-    value: Op[str] = {"$regex": "pattern"}
+    value: StrOp = {"$regex": "pattern"}
+    assert value["$regex"] == "pattern"
+
+
+def test_nontrivial_str_op_includes_regex_operator():
+    value: NontrivialStrOp = {"$regex": "pattern", "$options": "i"}
+
     assert value["$regex"] == "pattern"
 
 

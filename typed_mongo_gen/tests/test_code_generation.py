@@ -59,7 +59,26 @@ def test_stub_file_has_full_types(tmp_path: Path):
     assert '"name",' in content
     assert '"age",' in content
     assert 'TestModelQuery = TypedDict("TestModelQuery"' in content
-    assert '"_id": Op[str],' in content
+    assert '"_id": StrOp,' in content
+    assert '"name": StrOp,' in content
+    assert '"age": Op[int | None],' in content
+
+
+def test_string_union_query_type_includes_str_op(tmp_path: Path):
+    class _ModelWithStringUnions(BaseModel):
+        nickname: str | None
+        code: str | int
+        age: int | None
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(
+        runtime_path, stub_path, {"ModelWithStringUnions": _ModelWithStringUnions}
+    )
+
+    content = stub_path.read_text()
+    assert '"nickname": Op[str | None] | StrOp,' in content
+    assert '"code": Op[str | int] | StrOp,' in content
     assert '"age": Op[int | None],' in content
 
 
@@ -104,7 +123,7 @@ def test_generated_code_compiles(tmp_path: Path):
 
 
 def test_list_field_query_type_is_op_element_or_list(tmp_path: Path):
-    """Query TypedDict for list[T] fields should use Op[T | list[T]] | ElemMatch[...]."""
+    """String list queries should add regex without adding it to numeric lists."""
 
     class _ModelWithList(BaseModel):
         tags: list[str]
@@ -115,7 +134,10 @@ def test_list_field_query_type_is_op_element_or_list(tmp_path: Path):
     write_field_paths(runtime_path, stub_path, {"ModelWithList": _ModelWithList})
 
     content = stub_path.read_text()
-    assert '"tags": Op[str | list[str]] | ElemMatch[NontrivialOp[str]],' in content
+    assert (
+        '"tags": Op[str | list[str]] | StrOp' + " | ElemMatch[NontrivialStrOp],"
+        in content
+    )
     assert '"ids": Op[int | list[int]] | ElemMatch[NontrivialOp[int]],' in content
 
 
@@ -134,7 +156,8 @@ def test_nested_list_field_query_type_includes_all_levels(tmp_path: Path):
     content = stub_path.read_text()
     expected = (
         '"matrix": Op[str | list[str] | list[list[str]] | list[list[list[str]]]]'
-        " | ElemMatch[NontrivialOp[list[list[str]]]],"
+        " | StrOp"
+        " | ElemMatch[NontrivialOp[list[list[str]]] | NontrivialStrOp],"
     )
     assert expected in content
 
@@ -154,9 +177,13 @@ def test_union_with_list_expands_list_member(tmp_path: Path):
 
     content = stub_path.read_text()
     assert (
-        '"tags": Op[str | list[str] | None] | ElemMatch[NontrivialOp[str]],' in content
+        '"tags": Op[str | list[str] | None] | StrOp' + " | ElemMatch[NontrivialStrOp],"
+        in content
     )
-    assert '"ids": Op[int | list[int] | str] | ElemMatch[NontrivialOp[int]],' in content
+    assert (
+        '"ids": Op[int | list[int] | str] | StrOp' + " | ElemMatch[NontrivialOp[int]],"
+        in content
+    )
 
 
 class _ModelWithMixedFields(BaseModel):
@@ -532,7 +559,7 @@ def test_stub_header_imports_typing(tmp_path: Path):
     assert "Required" in typing_line
     assert "typing_extensions" not in content
     assert (
-        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, Op"
+        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, NontrivialStrOp, Op, StrOp"
         in content
     )
 

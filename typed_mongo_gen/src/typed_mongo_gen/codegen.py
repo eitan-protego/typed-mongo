@@ -200,6 +200,19 @@ def _query_value_type_src(
     return _annotation_to_source(annotation, module_aliases, model_dict_names)
 
 
+def _contains_str(annotation: Any) -> bool:
+    if annotation is str:
+        return True
+    if isinstance(annotation, typing.TypeAliasType):
+        return _contains_str(annotation.__value__)
+    origin = get_origin(annotation)
+    if origin is typing.Annotated:
+        return _contains_str(get_args(annotation)[0])
+    if origin is types.UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated]
+        return any(_contains_str(arg) for arg in get_args(annotation))
+    return origin is list and any(_contains_str(arg) for arg in get_args(annotation))
+
+
 def _collect_imports(
     annotation: Any, model_dict_names: dict[type, str] | None = None
 ) -> set[tuple[str, str]]:
@@ -339,7 +352,7 @@ Do not edit manually. Regenerate with:
     stub_f.write("from typed_mongo import TypedCollection\n")
     stub_f.write("from collections.abc import Mapping\n")
     stub_f.write(
-        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, Op\n"
+        "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, NontrivialStrOp, Op, StrOp\n"
     )
     stub_f.write("\n")
 
@@ -461,13 +474,20 @@ def _write_model(
             query_val_src = _query_value_type_src(
                 path_types[path], module_aliases, model_dict_names
             )
-            op_type = f"Op[{query_val_src}]"
+            op_type = "StrOp" if path_types[path] is str else f"Op[{query_val_src}]"
+            if path_types[path] is not str and _contains_str(path_types[path]):
+                op_type = f"{op_type} | StrOp"
             elem_type = extract_list_element_type(path_types[path])
             if elem_type is not None:
                 elem_src = _annotation_to_source(
                     elem_type, module_aliases, model_dict_names
                 )
-                op_type = f"{op_type} | ElemMatch[NontrivialOp[{elem_src}]]"
+                elem_op = f"NontrivialOp[{elem_src}]"
+                if elem_type is str:
+                    elem_op = "NontrivialStrOp"
+                elif _contains_str(elem_type):
+                    elem_op = f"{elem_op} | NontrivialStrOp"
+                op_type = f"{op_type} | ElemMatch[{elem_op}]"
             query_entries.append((path, op_type))
     query_entries.append(("$expr", "dict[str, Any]"))
     query_entries.append(("$and", f'list["{model_name}Query"]'))

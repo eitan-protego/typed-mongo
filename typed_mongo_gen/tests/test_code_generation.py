@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model
 from pydantic.alias_generators import to_camel
 from typed_mongo_gen.codegen import write_field_paths, write_typeddict
 from typed_mongo_gen.introspect import has_default
@@ -31,6 +31,24 @@ def test_write_field_paths_creates_both_files(tmp_path: Path):
 
     assert runtime_path.exists()
     assert stub_path.exists()
+
+
+@pytest.mark.parametrize("second_module", ["models.second", "models.first"])
+def test_generation_order_independent_of_discovery_order(
+    tmp_path: Path, second_module: str
+):
+    # Matching class names must not leave sorting ties, even in the same module.
+    first = create_model("Record", __module__="models.first", value=(str, ...))
+    second = create_model("Record", __module__=second_module, value=(int, ...))
+    models = {"FirstRecord": first, "SecondRecord": second}
+    runtime_path = tmp_path / "types.py"
+    stub_path = tmp_path / "types.pyi"
+
+    write_field_paths(runtime_path, stub_path, models)
+    expected = (runtime_path.read_bytes(), stub_path.read_bytes())
+    write_field_paths(runtime_path, stub_path, dict(reversed(models.items())))
+
+    assert (runtime_path.read_bytes(), stub_path.read_bytes()) == expected
 
 
 def test_runtime_file_has_simple_aliases(tmp_path: Path):

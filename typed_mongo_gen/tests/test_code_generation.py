@@ -6,6 +6,7 @@ import runpy
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 from typed_mongo_gen.codegen import write_field_paths, write_typeddict
@@ -13,6 +14,7 @@ from typed_mongo_gen.introspect import has_default
 
 
 class _TestModel(BaseModel):
+    __collection_name__: ClassVar[str] = "test_models"
     id: str = Field(validation_alias="_id", serialization_alias="_id")
     name: str
     age: int | None = None
@@ -189,6 +191,7 @@ def test_union_with_list_expands_list_member(tmp_path: Path):
 
 
 class _ModelWithMixedFields(BaseModel):
+    __collection_name__: ClassVar[str] = "mixed"
     name: str
     age: int | None = None
     score: float = 0.0
@@ -695,7 +698,12 @@ def test_pipeline_stage_union_updated(tmp_path: Path):
     """PipelineStage union should include all safe stage types."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
-    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+    write_field_paths(
+        runtime_path,
+        stub_path,
+        {"Mixed": _ModelWithMixedFields},
+        searchable_collections={"mixed"},
+    )
 
     content = stub_path.read_text()
     assert "type MixedPipelineStage = " in content
@@ -714,7 +722,12 @@ def test_runtime_has_aggregation_aliases(tmp_path: Path):
     """Runtime .py should have dict[str, Any] aliases for aggregation types."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
-    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+    write_field_paths(
+        runtime_path,
+        stub_path,
+        {"Mixed": _ModelWithMixedFields},
+        searchable_collections={"mixed"},
+    )
 
     content = runtime_path.read_text()
     assert "type MixedOptionalPath = str" in content
@@ -734,7 +747,12 @@ def test_search_types_do_not_repeat_model_fields(tmp_path: Path):
     """Search schema size stays fixed even for models with many paths."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
-    write_field_paths(runtime_path, stub_path, {"Document": _TestModel})
+    write_field_paths(
+        runtime_path,
+        stub_path,
+        {"Document": _TestModel},
+        searchable_collections={"test_models"},
+    )
     content = stub_path.read_text().split("type DocumentSearchPath = ")[1]
     content = content.split("DocumentMatchStage = ")[0]
     assert "_search.SearchRange[DocumentPath]" in content
@@ -744,6 +762,42 @@ def test_search_types_do_not_repeat_model_fields(tmp_path: Path):
     assert len(content.splitlines()) < 65
 
 
+def test_search_generation_is_opt_in_by_collection(tmp_path: Path):
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    models = {"RenamedModel": _TestModel, "Mixed": _ModelWithMixedFields}
+
+    write_field_paths(runtime_path, stub_path, models)
+    assert "Search" not in runtime_path.read_text()
+    assert "Search" not in stub_path.read_text()
+    assert "typed_mongo.search" not in stub_path.read_text()
+
+    # A plain BaseModel's stable collection name is enough; class names can change.
+    write_field_paths(
+        runtime_path, stub_path, models, searchable_collections={"test_models"}
+    )
+    assert "RenamedModelSearchStage" in runtime_path.read_text()
+    assert "RenamedModelSearchMetaStage" in stub_path.read_text()
+    assert "MixedSearch" not in runtime_path.read_text()
+    assert "MixedSearch" not in stub_path.read_text()
+
+
+def test_unknown_searchable_collection_preserves_output(tmp_path: Path):
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    runtime_path.write_text("runtime sentinel")
+    stub_path.write_text("stub sentinel")
+    with pytest.raises(ValueError, match="Unknown searchable collections: typo"):
+        write_field_paths(
+            runtime_path,
+            stub_path,
+            {"Document": _TestModel},
+            searchable_collections={"typo"},
+        )
+    assert runtime_path.read_text() == "runtime sentinel"
+    assert stub_path.read_text() == "stub sentinel"
+
+
 # --- Task 8: unsafe stages and aggregation_step ---
 
 
@@ -751,7 +805,12 @@ def test_unsafe_stage_types(tmp_path: Path):
     """Stub should have model-specific unsafe stage TypedDicts."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
-    write_field_paths(runtime_path, stub_path, {"Mixed": _ModelWithMixedFields})
+    write_field_paths(
+        runtime_path,
+        stub_path,
+        {"Mixed": _ModelWithMixedFields},
+        searchable_collections={"mixed"},
+    )
 
     content = stub_path.read_text()
     assert 'MixedGroupStage = TypedDict("MixedGroupStage"' in content
@@ -816,7 +875,12 @@ def test_generated_queries_and_pipelines_support_json_schema(tmp_path: Path):
     """Consumers can execute stubs and build schemas without special config."""
     runtime_path = tmp_path / "out.py"
     stub_path = tmp_path / "out.pyi"
-    write_field_paths(runtime_path, stub_path, {"TestModel": _TestModel})
+    write_field_paths(
+        runtime_path,
+        stub_path,
+        {"TestModel": _TestModel},
+        searchable_collections={"test_models"},
+    )
     types = runpy.run_path(str(stub_path))
     pipeline_stage = types["TestModelPipelineStage"]
     unsafe_stage = types["TestModelUnsafeStage"]

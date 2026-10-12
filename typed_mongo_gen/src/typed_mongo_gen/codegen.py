@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import types
 import typing
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from graphlib import TopologicalSorter
 from pathlib import Path
 from typing import Any, Literal, get_args, get_origin
@@ -387,6 +387,8 @@ def _write_headers(
     all_imports: set[tuple[str, str]],
     model_imports: dict[str, set[str]],
     module_aliases: dict[str, str],
+    *,
+    search_enabled: bool = False,
 ) -> None:
     """Write headers to both runtime .py and stub .pyi files."""
     header = '''"""Auto-generated MongoDB field path types.
@@ -436,7 +438,8 @@ Do not edit manually. Regenerate with:
 
     stub_f.write("from pymongo.asynchronous.database import AsyncDatabase\n")
     stub_f.write("from typed_mongo import TypedCollection\n")
-    stub_f.write("import typed_mongo.search as _search\n")
+    if search_enabled:
+        stub_f.write("import typed_mongo.search as _search\n")
     stub_f.write("from collections.abc import Mapping\n")
     stub_f.write(
         "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, NontrivialStrOp, Op, StrOp\n"
@@ -476,6 +479,8 @@ def _write_model(
     path_types: dict[str, Any],
     module_aliases: dict[str, str],
     model_dict_names: dict[type, str],
+    *,
+    search_enabled: bool = False,
 ) -> None:
     """Write a model's types and Collection class to both .py and .pyi files."""
     func_name = _to_snake_case(model_name)
@@ -669,8 +674,9 @@ def _write_model(
 
     # --- Safe aggregation stage TypedDicts ---
 
-    for search_type in _write_search_types(stub_f, model_name):
-        runtime_f.write(f"{search_type} = dict[str, Any]\n")
+    if search_enabled:
+        for search_type in _write_search_types(stub_f, model_name):
+            runtime_f.write(f"{search_type} = dict[str, Any]\n")
 
     write_typeddict(
         stub_f, f"{model_name}MatchStage", [("$match", f"{model_name}Query")]
@@ -697,7 +703,6 @@ def _write_model(
 
     # PipelineStage union (safe stages only)
     safe_stages = [
-        f"{model_name}SearchStage",
         f"{model_name}MatchStage",
         f"{model_name}SortStage",
         f"{model_name}LimitStage",
@@ -705,6 +710,8 @@ def _write_model(
         f"{model_name}SetStage",
         f"{model_name}AddFieldsStage",
     ]
+    if search_enabled:
+        safe_stages.insert(0, f"{model_name}SearchStage")
     if optional_paths:
         safe_stages.append(f"{model_name}AggUnsetStage")
     stub_f.write(f"type {model_name}PipelineStage = (\n")
@@ -819,7 +826,6 @@ def _write_model(
 
     # UnsafeStage union and aggregation_step function
     unsafe_stages = [
-        f"{model_name}SearchMetaStage",
         f"{model_name}GroupStage",
         f"{model_name}UnwindStage",
         f"{model_name}ProjectStage",
@@ -827,6 +833,8 @@ def _write_model(
         f"{model_name}BucketAutoStage",
         f"{model_name}LookupStage",
     ]
+    if search_enabled:
+        unsafe_stages.insert(0, f"{model_name}SearchMetaStage")
     stub_f.write(f"type {model_name}UnsafeStage = (\n")
     for i, stage in enumerate(unsafe_stages):
         prefix = "    " if i == 0 else "    | "
@@ -935,6 +943,8 @@ def write_field_paths(
     runtime_path: Path,
     stub_path: Path,
     models: Mapping[str, type[BaseModel]],
+    *,
+    searchable_collections: Collection[str] = (),
 ) -> None:
     """Write both runtime .py and stub .pyi files for field path types.
 
@@ -942,7 +952,19 @@ def write_field_paths(
         runtime_path: Path to write the runtime .py file
         stub_path: Path to write the stub .pyi file
         models: Dictionary mapping model names to BaseModel classes
+        searchable_collections: MongoDB collection names to enable Atlas Search types for.
     """
+    selected_search = set(searchable_collections)
+    collections = {
+        name: collection
+        for name, model in models.items()
+        if isinstance(collection := getattr(model, "__collection_name__", None), str)
+    }
+    unknown = selected_search.difference(collections.values())
+    if unknown:
+        raise ValueError(
+            f"Unknown searchable collections: {', '.join(sorted(unknown))}. Available collections: {', '.join(sorted(set(collections.values())))}"
+        )
     # Collect all nested BaseModel types and assign Dict names
     model_dict_names = _collect_all_nested_models(models)
     top_level_classes = set(models.values())
@@ -972,7 +994,14 @@ def write_field_paths(
     sorted_models = _topological_order(model_dict_names)
 
     with runtime_path.open("w") as runtime_f, stub_path.open("w") as stub_f:
-        _write_headers(runtime_f, stub_f, all_imports, model_imports, module_aliases)
+        _write_headers(
+            runtime_f,
+            stub_f,
+            all_imports,
+            model_imports,
+            module_aliases,
+            search_enabled=bool(selected_search),
+        )
 
         # Emit standalone Dict TypedDicts for nested-only models (in dependency order)
         for model_cls in sorted_models:
@@ -996,6 +1025,7 @@ def write_field_paths(
                     model_path_types[name],
                     module_aliases,
                     model_dict_names,
+                    search_enabled=collections.get(name) in selected_search,
                 )
 
         # Emit typed_dump() function

@@ -17,6 +17,9 @@ typed-mongo-gen 'app/models/**/*.py' --output app/_generated_types.py
 # With formatters
 typed-mongo-gen models.py --output types.py --formatter 'ruff format' --formatter 'ruff check --fix'
 
+# Enable search types only for selected MongoDB collections
+typed-mongo-gen models.py --output types.py --searchable-collections cases
+
 # From pyproject.toml config (no arguments needed)
 typed-mongo-gen
 ```
@@ -30,6 +33,7 @@ formatter = ["ruff format"]
 [[tool.typed-mongo-gen.jobs]]
 sources = ["app/models/**/*.py"]
 output = "app/_generated_types.py"
+searchable_collections = ["cases"]
 
 [[tool.typed-mongo-gen.jobs]]
 sources = ["other/models.py"]
@@ -38,6 +42,16 @@ formatter = ["ruff format", "ruff check --fix"]  # overrides default
 ```
 
 Each job inherits from `defaults` — any field not set on a job falls back to the default.
+
+`searchable_collections` selects MongoDB names from `__collection_name__`, so renaming a model class does not change the selection. It defaults to `[]`: unselected collections get no search aliases, search imports, or search members in their pipeline unions. Set it in `defaults` to share a selection; an explicit `[]` on a job disables inherited search generation. Unknown collection names are rejected before rewriting that job's output.
+
+The Python API accepts the same selection:
+
+```python
+write_field_paths(runtime_path, stub_path, models, searchable_collections={"cases"})
+```
+
+Search typing needs only Pydantic field paths and `__collection_name__` for selection; it does not require `MongoCollectionModel` inheritance. The CLI keeps its existing `MongoCollectionModel` discovery because it also generates collection wrappers that use `get_collection()`.
 
 ## How it works
 
@@ -70,3 +84,5 @@ Each job inherits from `defaults` — any field not set on a job falls back to t
 | `typed_dump()` | Overloaded function: model instance to its `Dict` type |
 
 Search payload schemas live in `typed_mongo.search`. Generated search aliases bind the model's existing `Path` type and recursive clauses; they do not repeat field lists or option schemas for every model. Plain dictionaries and existing typed sort mappings work directly.
+
+`{Name}Search*` types are emitted only for selected collections.

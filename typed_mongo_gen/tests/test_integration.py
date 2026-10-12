@@ -26,13 +26,18 @@ def test_search_pipeline_type_checking(tmp_path: Path):
             name: str
             price: float
             details: Details
+
+        class Catalog(MongoCollectionModel):
+            __collection_name__ = "catalog"
+            name: str
     """)
     )
     models = runpy.run_path(str(models_file), run_name="models")
     write_field_paths(
         tmp_path / "generated.py",
         tmp_path / "generated.pyi",
-        {"Product": models["Product"]},
+        {"Product": models["Product"], "Catalog": models["Catalog"]},
+        searchable_collections={"products"},
     )
 
     (tmp_path / "valid.py").write_text(
@@ -95,7 +100,7 @@ def test_search_pipeline_type_checking(tmp_path: Path):
         '{"text": {"path": "name", "query": "phone"}, "returnScope": {"path": "details"}}',
     ]
     (tmp_path / "invalid.py").write_text(
-        "from generated import ProductSearchStage, ProductPipelineStage, ProductSearchMetaStage\n"
+        "from generated import ProductSearchStage, ProductPipelineStage, ProductSearchMetaStage, CatalogPipelineStage, CatalogUnsafeStage\n"
         + "\n".join(
             f'bad{i}: ProductSearchStage = {{"$search": {query}}}'
             for i, query in enumerate(invalid_queries)
@@ -104,6 +109,8 @@ def test_search_pipeline_type_checking(tmp_path: Path):
         + '\ninvalid_metadata: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "missing"}}}'
         + '\nmetadata_sort: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "sort": {"price": 1}}}'
         + '\nmetadata_scope: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "returnScope": {"path": "missing"}}}'
+        + '\ndisabled_search: CatalogPipelineStage = {"$search": {"exists": {"path": "name"}}}'
+        + '\ndisabled_metadata: CatalogUnsafeStage = {"$searchMeta": {"exists": {"path": "name"}}}'
     )
     config = tmp_path / "pyrightconfig.json"
     config.write_text(
@@ -137,7 +144,7 @@ def test_search_pipeline_type_checking(tmp_path: Path):
     rejected_lines = {
         d["range"]["start"]["line"] for d in diagnostics if d["severity"] == "error"
     }
-    assert rejected_lines == set(range(1, len(invalid_queries) + 5)), diagnostics
+    assert rejected_lines == set(range(1, len(invalid_queries) + 7)), diagnostics
 
 
 def test_end_to_end_generation(tmp_path: Path):
@@ -179,6 +186,8 @@ def test_end_to_end_generation(tmp_path: Path):
             str(models_file),
             "--output",
             str(output_file),
+            "--searchable-collections",
+            "products",
         ],
         cwd=Path(__file__).parent.parent.parent,  # typed_mongo_gen root
         capture_output=True,
@@ -227,6 +236,8 @@ def test_end_to_end_generation(tmp_path: Path):
     # Verify both models are included
     assert "Product" in stub_content
     assert "Order" in stub_content
+    assert "ProductSearchStage" in stub_content
+    assert "OrderSearch" not in stub_content
 
 
 def test_cli_errors_on_empty_registry(tmp_path: Path):
@@ -316,6 +327,7 @@ def test_pyproject_config_jobs(tmp_path: Path):
         [[tool.typed-mongo-gen.jobs]]
         sources = ["{models_file}"]
         output = "{output_file}"
+        searchable_collections = ["widgets"]
     """)
     )
 
@@ -330,7 +342,7 @@ def test_pyproject_config_jobs(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     assert output_file.exists()
     assert output_file.with_suffix(".pyi").exists()
-    assert "Widget" in output_file.with_suffix(".pyi").read_text()
+    assert "WidgetSearchStage" in output_file.with_suffix(".pyi").read_text()
 
 
 def test_pyproject_config_defaults(tmp_path: Path):

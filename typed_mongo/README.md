@@ -63,7 +63,16 @@ results = await users.aggregate(
 
 ### Atlas Search
 
-Regenerate your model types to use `$search` in typed pipelines:
+Enable the collection's search types in your codegen job and regenerate to use `$search` in typed pipelines:
+
+```toml
+[[tool.typed-mongo-gen.jobs]]
+sources = ["app/models/**/*.py"]
+output = "app/_generated_types.py"
+searchable_collections = ["users"]
+```
+
+Search generation is disabled by default. Collection names are matched against `__collection_name__`, independent of the model class name.
 
 ```python
 async for user in await users.aggregate([

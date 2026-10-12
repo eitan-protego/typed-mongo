@@ -59,6 +59,8 @@ Each job inherits from `defaults` — any field not set on a job falls back to t
 | `{Name}UnsetFields` | Optional paths mapped to `Literal[""]` |
 | `{Name}Update` | `TypedDict` with `$set`, `$unset`, `$inc`, `$push`, `$pull`, etc. |
 | `{Name}PipelineStage` | Union of safe aggregation stages |
+| `{Name}SearchStage` | Atlas `$search` stage with model field paths |
+| `{Name}SearchOptions` | Search operators, compound clauses, highlighting, sorting, and pagination |
 | `{Name}UnsafeStage` | Union of shape-changing stages |
 | `{Name}Collection` | Concrete `TypedCollection` subclass |
 | `{name}_aggregation_step()` | Type-checks an unsafe stage, returns `AggregationStep` |

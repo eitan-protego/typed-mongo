@@ -46,6 +46,7 @@ def write_typeddict(
     entries: list[tuple[str, str]],
     *,
     total: bool = True,
+    extra_items: str | None = None,
 ) -> None:
     """Write a TypedDict using class syntax if possible, else function-call syntax."""
     keys = [k for k, _ in entries]
@@ -54,6 +55,8 @@ def write_typeddict(
     extra_kwargs = ""
     if not total:
         extra_kwargs += ", total=False"
+    if extra_items is not None:
+        extra_kwargs += f", extra_items={extra_items}"
 
     if not entries:
         # Empty TypedDict — always use function-call syntax
@@ -75,6 +78,191 @@ def write_typeddict(
 def _module_alias(module: str) -> str:
     """Convert a dotted module path to a unique Python identifier alias."""
     return "_" + module.replace(".", "_")
+
+
+def _write_search_types(
+    f: typing.TextIO, model_name: str, paths: list[str]
+) -> list[str]:
+    """Emit Atlas Search types with model paths, including recursive clauses."""
+    path = f"{model_name}Path"
+    prefix = f"{model_name}Search"
+    write_typeddict(f, f"{prefix}WildcardPath", [("wildcard", "str")])
+    write_typeddict(f, f"{prefix}MultiPath", [("value", path), ("multi", "str")])
+    f.write(
+        f"type {prefix}Path = {path} | {prefix}WildcardPath | {prefix}MultiPath | "
+        + f"list[{path} | {prefix}WildcardPath | {prefix}MultiPath]\n\n"
+    )
+    write_typeddict(
+        f,
+        f"{prefix}Fuzzy",
+        [
+            ("maxEdits", "Literal[1, 2]"),
+            ("prefixLength", "int"),
+            ("maxExpansions", "int"),
+        ],
+        total=False,
+    )
+    scored = [("score", "dict[str, Any]")]
+    text = [("query", "Required[str | list[str]]"), ("path", f"Required[{prefix}Path]")]
+    single_path = [("path", f"Required[{path}]")]
+    definitions: dict[str, list[tuple[str, str]]] = {
+        "Text": text
+        + [
+            ("fuzzy", f"{prefix}Fuzzy"),
+            ("matchCriteria", 'Literal["any", "all"]'),
+            ("synonyms", "str"),
+        ],
+        "Autocomplete": [("query", "Required[str | list[str]]")]
+        + single_path
+        + [("fuzzy", f"{prefix}Fuzzy"), ("tokenOrder", 'Literal["any", "sequential"]')],
+        "Phrase": text + [("slop", "int"), ("synonyms", "str")],
+        "Pattern": text + [("allowAnalyzedField", "bool")],
+        "QueryString": [
+            ("defaultPath", f"Required[{path}]"),
+            ("query", "Required[str]"),
+        ],
+        "Equals": single_path
+        + [("value", "Required[Any]"), ("doesNotAffect", "str | list[str]")],
+        "In": [("path", f"Required[{prefix}Path]")]
+        + [("value", "Required[Any]"), ("doesNotAffect", "str | list[str]")],
+        "Exists": single_path,
+        "Range": [("path", f"Required[{path} | list[{path}]]")]
+        + [(key, "Any") for key in ("gt", "gte", "lt", "lte")]
+        + [("doesNotAffect", "str | list[str]")],
+        "Near": [
+            ("path", f"Required[{path} | list[{path}]]"),
+            ("origin", "Required[Any]"),
+            ("pivot", "Required[float]"),
+        ],
+        "Compound": [
+            (key, f"list[{prefix}Operator]")
+            for key in ("must", "mustNot", "should", "filter")
+        ]
+        + [("minimumShouldMatch", "int"), ("doesNotAffect", "str | list[str]")],
+        "EmbeddedDocument": single_path + [("operator", f"Required[{prefix}Operator]")],
+    }
+    for suffix, entries in definitions.items():
+        write_typeddict(f, f"{prefix}{suffix}", entries + scored, total=False)
+
+    operator_entries = [
+        (operator, f"{prefix}{suffix}")
+        for operator, suffix in (
+            ("text", "Text"),
+            ("autocomplete", "Autocomplete"),
+            ("phrase", "Phrase"),
+            ("regex", "Pattern"),
+            ("wildcard", "Pattern"),
+            ("queryString", "QueryString"),
+            ("equals", "Equals"),
+            ("in", "In"),
+            ("exists", "Exists"),
+            ("range", "Range"),
+            ("near", "Near"),
+            ("compound", "Compound"),
+            ("embeddedDocument", "EmbeddedDocument"),
+        )
+    ]
+    # ponytail: advanced operator payloads stay open; deepen when their schemas are needed.
+    operator_entries += [
+        (key, "dict[str, Any]")
+        for key in (
+            "geoShape",
+            "geoWithin",
+            "moreLikeThis",
+            "span",
+            "knnBeta",
+            "vectorSearch",
+            "hasAncestor",
+            "hasRoot",
+        )
+    ]
+    write_typeddict(f, f"{prefix}Operator", operator_entries, total=False)
+    write_typeddict(
+        f,
+        f"{prefix}Highlight",
+        [
+            ("path", f"Required[{prefix}Path]"),
+            ("maxCharsToExamine", "int"),
+            ("maxNumPassages", "int"),
+        ],
+        total=False,
+    )
+    write_typeddict(
+        f,
+        f"{prefix}Count",
+        [
+            ("type", 'Required[Literal["lowerBound", "total"]]'),
+            ("threshold", "int"),
+        ],
+        total=False,
+    )
+    # Score metadata can use an arbitrary output name, unlike ordinary sort fields.
+    write_typeddict(
+        f,
+        f"{prefix}ScoreSort",
+        [
+            ("$meta", 'Required[Literal["searchScore"]]'),
+            ("order", "Literal[1, -1]"),
+        ],
+        total=False,
+    )
+    write_typeddict(
+        f,
+        f"{prefix}SortOptions",
+        [
+            ("order", "Required[Literal[1, -1]]"),
+            ("noData", 'Literal["highest", "lowest"]'),
+        ],
+        total=False,
+    )
+    write_typeddict(
+        f,
+        f"{prefix}Sort",
+        [
+            (p, f"Literal[1, -1] | {prefix}SortOptions | {prefix}ScoreSort")
+            for p in paths
+        ],
+        total=False,
+        extra_items=f"{prefix}ScoreSort",
+    )
+    write_typeddict(
+        f,
+        f"{prefix}Options",
+        operator_entries
+        + [
+            ("index", "str"),
+            ("highlight", f"{prefix}Highlight"),
+            ("count", f"{prefix}Count"),
+            ("concurrent", "bool"),
+            ("scoreDetails", "bool"),
+            ("searchAfter", "str"),
+            ("searchBefore", "str"),
+            ("sort", f"{prefix}Sort"),
+            ("returnStoredSource", "Literal[False]"),
+            ("searchNodePreference", 'dict[Literal["key"], str]'),
+            ("facet", "dict[str, Any]"),
+        ],
+        total=False,
+    )
+    write_typeddict(f, f"{prefix}Stage", [("$search", f"{prefix}Options")])
+    return [
+        f"{prefix}{suffix}"
+        for suffix in (
+            "WildcardPath",
+            "MultiPath",
+            "Path",
+            "Fuzzy",
+            *definitions,
+            "Operator",
+            "Highlight",
+            "Count",
+            "ScoreSort",
+            "SortOptions",
+            "Sort",
+            "Options",
+            "Stage",
+        )
+    ]
 
 
 def _literal_repr(value: Any) -> str:
@@ -582,6 +770,9 @@ def _write_model(
 
     # --- Safe aggregation stage TypedDicts ---
 
+    for search_type in _write_search_types(stub_f, model_name, paths):
+        runtime_f.write(f"{search_type} = dict[str, Any]\n")
+
     write_typeddict(
         stub_f, f"{model_name}MatchStage", [("$match", f"{model_name}Query")]
     )
@@ -607,6 +798,7 @@ def _write_model(
 
     # PipelineStage union (safe stages only)
     safe_stages = [
+        f"{model_name}SearchStage",
         f"{model_name}MatchStage",
         f"{model_name}SortStage",
         f"{model_name}LimitStage",

@@ -699,6 +699,7 @@ def test_pipeline_stage_union_updated(tmp_path: Path):
     assert "type MixedPipelineStage = " in content
     stage_section = content.split("type MixedPipelineStage = ")[1].split("\n\n")[0]
     assert "MixedMatchStage" in stage_section
+    assert "MixedSearchStage" in stage_section
     assert "MixedSortStage" in stage_section
     assert "MixedLimitStage" in stage_section
     assert "MixedSkipStage" in stage_section
@@ -716,6 +717,8 @@ def test_runtime_has_aggregation_aliases(tmp_path: Path):
     content = runtime_path.read_text()
     assert "type MixedOptionalPath = str" in content
     assert "MixedMatchStage = dict[str, Any]" in content
+    assert "MixedSearchStage = dict[str, Any]" in content
+    assert "MixedSearchOptions = dict[str, Any]" in content
     assert "MixedSortStage = dict[str, Any]" in content
     assert "MixedLimitStage = dict[str, Any]" in content
     assert "MixedSkipStage = dict[str, Any]" in content

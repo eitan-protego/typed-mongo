@@ -21,6 +21,7 @@ class JobConfig(BaseModel):
     sources: list[str] | None = None
     output: Path | None = None
     formatter: list[str] = []
+    searchable_collections: list[str] | None = None
 
 
 class ToolConfig(BaseModel):
@@ -38,6 +39,8 @@ class ToolConfig(BaseModel):
                 job.output = self.defaults.output
             if not job.formatter:
                 job.formatter = self.defaults.formatter
+            if job.searchable_collections is None:
+                job.searchable_collections = self.defaults.searchable_collections
         return self
 
 
@@ -119,6 +122,7 @@ def _run_single_job(
     source_patterns: list[str],
     output: Path | None,
     formatter: list[str],
+    searchable_collections: list[str] | None = None,
 ) -> None:
     """Run a single codegen job: expand sources, collect models, generate, run post-commands."""
     # Determine output paths for exclusion
@@ -149,7 +153,16 @@ def _run_single_job(
         )
         sys.exit(1)
 
-    write_field_paths(runtime_path, stub_path, models)
+    try:
+        write_field_paths(
+            runtime_path,
+            stub_path,
+            models,
+            searchable_collections=searchable_collections or [],
+        )
+    except ValueError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Generated {len(models)} model types:")
     for model_name in sorted(models.keys()):
@@ -208,7 +221,9 @@ def _run_from_config() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        _run_single_job(job.sources, job.output, job.formatter)
+        _run_single_job(
+            job.sources, job.output, job.formatter, job.searchable_collections
+        )
 
 
 @app.default
@@ -217,6 +232,7 @@ def generate(
     *,
     output: Path | None = None,
     formatter: list[str] | None = None,
+    searchable_collections: list[str] | None = None,
 ) -> None:
     """Generate MongoDB field path types from Pydantic models.
 
@@ -229,6 +245,7 @@ def generate(
                 A stub .pyi file will be written alongside it.
         formatter: Formatter commands to run on generated files.
                    Each command receives the .py and .pyi paths as arguments.
+        searchable_collections: Collection names to enable Atlas Search types for. Disabled by default.
 
     Example:
         typed-mongo-gen 'app/models/**/*.py' --output app/models/_generated_types.py
@@ -239,7 +256,7 @@ def generate(
         _run_from_config()
         return
 
-    _run_single_job(sources, output, formatter or [])
+    _run_single_job(sources, output, formatter or [], searchable_collections)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-from typed_mongo_gen.cli import collect_models, expand_sources
+from typed_mongo_gen.cli import ToolConfig, collect_models, expand_sources
 
 _MODEL_SOURCE = dedent("""\
     from typed_mongo import MongoCollectionModel
@@ -89,3 +89,19 @@ def testexpand_sources_no_match_errors(tmp_path: Path):
     """expand_sources should exit if a pattern matches nothing."""
     with pytest.raises(SystemExit):
         expand_sources([str(tmp_path / "nonexistent_*.py")], exclude=set())
+
+
+def test_searchable_collection_defaults_and_explicit_empty_override():
+    config = ToolConfig.model_validate(
+        {
+            "defaults": {"searchable_collections": ["cases"]},
+            "jobs": [
+                {},
+                {"searchable_collections": []},
+                {"searchable_collections": ["other"]},
+            ],
+        }
+    )
+    assert config.jobs[0].searchable_collections == ["cases"]
+    assert config.jobs[1].searchable_collections == []
+    assert config.jobs[2].searchable_collections == ["other"]

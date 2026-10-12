@@ -37,11 +37,13 @@ def test_search_pipeline_type_checking(tmp_path: Path):
 
     (tmp_path / "valid.py").write_text(
         dedent("""\
-        from typing import assert_type
+        from typing import Literal, assert_type
         from models import Product
-        from generated import ProductCollection, ProductPath, ProductPipelineStage, ProductSearchStage
+        from generated import ProductCollection, ProductPath, ProductPipelineStage, ProductSearchStage, ProductSearchMetaStage, ProductSearchCompound, ProductSearchRange, ProductSearchSort, product_aggregation_step
         from typed_mongo import TypedCursor
+        from typed_mongo.search import combine_search_sort
 
+        sort_fields: dict[ProductPath, Literal[1, -1]] = {"price": 1}
         stage: ProductSearchStage = {"$search": {
             "index": "products",
             "compound": {
@@ -54,7 +56,7 @@ def test_search_pipeline_type_checking(tmp_path: Path):
             },
             "highlight": {"path": ["name", {"wildcard": "details.*"}]},
             "count": {"type": "lowerBound", "threshold": 100},
-            "sort": {"price": 1, "score": {"$meta": "searchScore", "order": -1}},
+            "sort": combine_search_sort(sort_fields, {"score": {"$meta": "searchScore", "order": -1}}),
             "searchAfter": "token", "scoreDetails": True, "concurrent": True,
             "returnStoredSource": False,
         }}
@@ -63,10 +65,17 @@ def test_search_pipeline_type_checking(tmp_path: Path):
         multi: ProductSearchStage = {"$search": {"text": {"path": {"value": "name", "multi": "english"}, "query": "phone"}}}
         phrase: ProductSearchStage = {"$search": {"phrase": {"path": ["name", "details.displayTitle"], "query": "mobile phone", "slop": 1}}}
         inclusion: ProductSearchStage = {"$search": {"in": {"path": ["name"], "value": ["phone"]}}}
+        metadata: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "count": {"type": "total"}}}
+        bounds: ProductSearchRange = {"path": "price"}
+        bounds["gte"] = 10
+        compound: ProductSearchCompound = {"filter": [{"range": bounds}]}
+        compound.get("filter", []).append({"exists": {"path": "name"}})
+        sort: ProductSearchSort = {"price": -1, "name": 1}
 
         async def search(collection: ProductCollection) -> None:
             cursor = await collection.aggregate(pipeline)
             assert_type(cursor, TypedCursor[Product, ProductPath])
+            await collection.aggregate([], [product_aggregation_step(metadata)])
     """)
     )
     invalid_queries = [
@@ -81,13 +90,16 @@ def test_search_pipeline_type_checking(tmp_path: Path):
         '{"text": {"path": "name", "query": "phone"}, "returnStoredSource": True}',
         '{"text": {"path": "name", "query": "phone"}, "index": 1}',
         '{"txet": {"path": "name", "query": "phone"}}',
+        '{"text": {"path": "name", "query": "phone"}, "returnScope": {"path": "details"}}',
     ]
     (tmp_path / "invalid.py").write_text(
-        "from generated import ProductSearchStage\n"
+        "from generated import ProductSearchStage, ProductPipelineStage, ProductSearchMetaStage\n"
         + "\n".join(
             f'bad{i}: ProductSearchStage = {{"$search": {query}}}'
             for i, query in enumerate(invalid_queries)
         )
+        + '\nmetadata_pipeline: ProductPipelineStage = {"$searchMeta": {"exists": {"path": "name"}}}'
+        + '\ninvalid_metadata: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "missing"}}}'
     )
     config = tmp_path / "pyrightconfig.json"
     config.write_text(
@@ -121,7 +133,7 @@ def test_search_pipeline_type_checking(tmp_path: Path):
     rejected_lines = {
         d["range"]["start"]["line"] for d in diagnostics if d["severity"] == "error"
     }
-    assert rejected_lines == set(range(1, len(invalid_queries) + 1)), diagnostics
+    assert rejected_lines == set(range(1, len(invalid_queries) + 3)), diagnostics
 
 
 def test_end_to_end_generation(tmp_path: Path):

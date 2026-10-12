@@ -83,7 +83,20 @@ Generated `UserSearchStage` and `UserSearchOptions` check model field paths (inc
 
 MongoDB requires `$search` to be the first stage; stage ordering, index configuration, and mutually exclusive options are validated by MongoDB, rather than these types. See the [MongoDB `$search` reference](https://www.mongodb.com/docs/search/query/aggregation-stages/search/).
 
-`returnStoredSource=True` and `returnScope` can change the result shape, so use the untyped `SearchStage` from `typed_mongo.operators` in an unsafe pipeline suffix for those options. `$searchMeta` also remains an untyped, shape-changing stage.
+`returnStoredSource=True` and `returnScope` can change the result shape, so use the untyped `SearchStage` from `typed_mongo.operators` in an unsafe pipeline suffix for those options.
+
+`UserSearchMetaStage` checks metadata queries too. Pass it through `user_aggregation_step()` in an unsafe suffix, starting with an empty safe pipeline when `$searchMeta` is the first stage:
+
+```python
+results = await users.aggregate([], [
+    user_aggregation_step({"$searchMeta": {
+        "text": {"path": "name", "query": "Alice"},
+        "count": {"type": "total"},
+    }}),
+])
+```
+
+Field-only sorts accept typed mappings of model paths to `1` or `-1`. For a mixed field and score sort, use `typed_mongo.search.combine_search_sort()` with an explicitly typed field mapping; score sorts can use arbitrary output names. This follows the same approach as `combine_ops()` while avoiding another copy of every field path in generated stubs.
 
 ### Query operators
 

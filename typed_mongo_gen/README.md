@@ -61,7 +61,11 @@ Each job inherits from `defaults` — any field not set on a job falls back to t
 | `{Name}PipelineStage` | Union of safe aggregation stages |
 | `{Name}SearchStage` | Atlas `$search` stage with model field paths |
 | `{Name}SearchOptions` | Search operators, compound clauses, highlighting, sorting, and pagination |
+| `{Name}SearchOperator` | A search clause, including recursive compound and embedded document clauses |
+| `{Name}SearchMetaStage` | Atlas `$searchMeta` stage, available in the unsafe pipeline suffix |
 | `{Name}UnsafeStage` | Union of shape-changing stages |
 | `{Name}Collection` | Concrete `TypedCollection` subclass |
 | `{name}_aggregation_step()` | Type-checks an unsafe stage, returns `AggregationStep` |
 | `typed_dump()` | Overloaded function: model instance to its `Dict` type |
+
+Search payload schemas live in `typed_mongo.search`. Generated search aliases bind the model's existing `Path` type and recursive clauses; they do not repeat field lists or option schemas for every model. Plain dictionaries and existing typed sort mappings work directly.

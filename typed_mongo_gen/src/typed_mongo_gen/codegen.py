@@ -77,6 +77,92 @@ def _module_alias(module: str) -> str:
     return "_" + module.replace(".", "_")
 
 
+def _write_search_types(f: typing.TextIO, model_name: str) -> list[str]:
+    """Specialize shared search payloads without repeating their schemas."""
+    path = f"{model_name}Path"
+    prefix = f"{model_name}Search"
+    aliases = {
+        suffix: f"_search.Search{suffix}[{path}]"
+        for suffix in (
+            "Path",
+            "MultiPath",
+            "Text",
+            "Autocomplete",
+            "Phrase",
+            "Pattern",
+            "QueryString",
+            "Equals",
+            "In",
+            "Exists",
+            "Range",
+            "Near",
+            "Highlight",
+            "Sort",
+        )
+    }
+    aliases.update(
+        {
+            "Compound": f"_search.SearchCompound[{prefix}Operator]",
+            "EmbeddedDocument": f"_search.SearchEmbeddedDocument[{path}, {prefix}Operator]",
+        }
+    )
+    for suffix, target in aliases.items():
+        f.write(f"type {prefix}{suffix} = {target}\n")
+    f.write("\n")
+    operator_entries = [
+        (operator, f"{prefix}{suffix}")
+        for operator, suffix in (
+            ("text", "Text"),
+            ("autocomplete", "Autocomplete"),
+            ("phrase", "Phrase"),
+            ("regex", "Pattern"),
+            ("wildcard", "Pattern"),
+            ("queryString", "QueryString"),
+            ("equals", "Equals"),
+            ("in", "In"),
+            ("exists", "Exists"),
+            ("range", "Range"),
+            ("near", "Near"),
+            ("compound", "Compound"),
+            ("embeddedDocument", "EmbeddedDocument"),
+        )
+    ]
+    # shortcut: advanced operator payloads stay open, deepen when their schemas are needed.
+    operator_entries += [
+        (key, "dict[str, Any]")
+        for key in (
+            "geoShape",
+            "geoWithin",
+            "moreLikeThis",
+            "span",
+            "knnBeta",
+            "vectorSearch",
+            "hasAncestor",
+            "hasRoot",
+        )
+    ]
+    write_typeddict(f, f"{prefix}Operator", operator_entries, total=False)
+    f.write(
+        f"class {prefix}Options({prefix}Operator, _search.SearchStageOptions[{path}]):\n    pass\n\n"
+    )
+    f.write(
+        f"class {prefix}MetaOptions({prefix}Operator, _search.SearchMetaOptions[{path}]):\n    pass\n\n"
+    )
+    write_typeddict(f, f"{prefix}Stage", [("$search", f"{prefix}Options")])
+    write_typeddict(f, f"{prefix}MetaStage", [("$searchMeta", f"{prefix}MetaOptions")])
+    return [
+        f"{prefix}{suffix}"
+        for suffix in (
+            *aliases,
+            "Operator",
+            "Options",
+            "MetaOptions",
+            "Stage",
+            "MetaStage",
+        )
+    ]
+
+
 def _literal_repr(value: Any) -> str:
     """Format a value for use inside Literal[...], using double quotes for strings."""
     if isinstance(value, str):
@@ -350,6 +436,7 @@ Do not edit manually. Regenerate with:
 
     stub_f.write("from pymongo.asynchronous.database import AsyncDatabase\n")
     stub_f.write("from typed_mongo import TypedCollection\n")
+    stub_f.write("import typed_mongo.search as _search\n")
     stub_f.write("from collections.abc import Mapping\n")
     stub_f.write(
         "from typed_mongo.operators import AggExprOp, AggregationStep, ElemMatch, NontrivialOp, NontrivialStrOp, Op, StrOp\n"
@@ -582,6 +669,9 @@ def _write_model(
 
     # --- Safe aggregation stage TypedDicts ---
 
+    for search_type in _write_search_types(stub_f, model_name):
+        runtime_f.write(f"{search_type} = dict[str, Any]\n")
+
     write_typeddict(
         stub_f, f"{model_name}MatchStage", [("$match", f"{model_name}Query")]
     )
@@ -607,6 +697,7 @@ def _write_model(
 
     # PipelineStage union (safe stages only)
     safe_stages = [
+        f"{model_name}SearchStage",
         f"{model_name}MatchStage",
         f"{model_name}SortStage",
         f"{model_name}LimitStage",
@@ -728,6 +819,7 @@ def _write_model(
 
     # UnsafeStage union and aggregation_step function
     unsafe_stages = [
+        f"{model_name}SearchMetaStage",
         f"{model_name}GroupStage",
         f"{model_name}UnwindStage",
         f"{model_name}ProjectStage",

@@ -2,8 +2,142 @@
 
 import subprocess
 import sys
+import json
+import runpy
 from pathlib import Path
 from textwrap import dedent
+
+from typed_mongo_gen.codegen import write_field_paths
+
+
+def test_search_pipeline_type_checking(tmp_path: Path):
+    """Check actual generated stubs, including errors nested inside compounds."""
+    models_file = tmp_path / "models.py"
+    models_file.write_text(
+        dedent("""\
+        from pydantic import BaseModel, Field
+        from typed_mongo import MongoCollectionModel
+
+        class Details(BaseModel):
+            title: str = Field(serialization_alias="displayTitle")
+
+        class Product(MongoCollectionModel):
+            __collection_name__ = "products"
+            name: str
+            price: float
+            details: Details
+    """)
+    )
+    models = runpy.run_path(str(models_file), run_name="models")
+    write_field_paths(
+        tmp_path / "generated.py",
+        tmp_path / "generated.pyi",
+        {"Product": models["Product"]},
+    )
+
+    (tmp_path / "valid.py").write_text(
+        dedent("""\
+        from typing import Literal, assert_type
+        from models import Product
+        from generated import ProductCollection, ProductPath, ProductPipelineStage, ProductSearchStage, ProductSearchMetaStage, ProductSearchCompound, ProductSearchRange, ProductSearchSort, product_aggregation_step
+        from typed_mongo import TypedCursor
+        from typed_mongo.search import combine_search_sort
+
+        sort_fields: dict[ProductPath, Literal[1, -1]] = {"price": 1}
+        stage: ProductSearchStage = {"$search": {
+            "index": "products",
+            "compound": {
+                "must": [{"text": {"query": ["phone", "mobile"], "path": "details.displayTitle",
+                    "fuzzy": {"maxEdits": 2, "prefixLength": 1}, "matchCriteria": "any"}}],
+                "filter": [{"range": {"path": "price", "gte": 10, "lt": 100}}],
+                "mustNot": [{"equals": {"path": "name", "value": "retired"}}],
+                "should": [{"compound": {"should": [{"exists": {"path": "name"}}]}}],
+                "minimumShouldMatch": 1,
+            },
+            "highlight": {"path": ["name", {"wildcard": "details.*"}]},
+            "count": {"type": "lowerBound", "threshold": 100},
+            "sort": combine_search_sort(sort_fields, {"score": {"$meta": "searchScore", "order": -1}}),
+            "searchAfter": "token", "scoreDetails": True, "concurrent": True,
+            "returnStoredSource": False,
+        }}
+        pipeline: list[ProductPipelineStage] = [stage, {"$limit": 10}]
+        autocomplete: ProductSearchStage = {"$search": {"autocomplete": {"path": "name", "query": "ph", "tokenOrder": "sequential"}}}
+        multi: ProductSearchStage = {"$search": {"text": {"path": {"value": "name", "multi": "english"}, "query": "phone"}}}
+        phrase: ProductSearchStage = {"$search": {"phrase": {"path": ["name", "details.displayTitle"], "query": "mobile phone", "slop": 1}}}
+        inclusion: ProductSearchStage = {"$search": {"in": {"path": ["name"], "value": ["phone"]}}}
+        metadata: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "count": {"type": "total"}}}
+        default_count: ProductSearchStage = {"$search": {"exists": {"path": "name"}, "count": {"threshold": 100}}}
+        scoped_metadata: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "returnScope": {"path": "details"}, "returnStoredSource": True}}
+        bounds: ProductSearchRange = {"path": "price"}
+        bounds["gte"] = 10
+        compound: ProductSearchCompound = {"filter": [{"range": bounds}]}
+        compound.get("filter", []).append({"exists": {"path": "name"}})
+        sort: ProductSearchSort = {"price": -1, "name": 1}
+
+        async def search(collection: ProductCollection) -> None:
+            cursor = await collection.aggregate(pipeline)
+            assert_type(cursor, TypedCursor[Product, ProductPath])
+            await collection.aggregate([], [product_aggregation_step(metadata)])
+    """)
+    )
+    invalid_queries = [
+        '{"text": {"path": "nmae", "query": "phone"}}',
+        '{"text": {"path": "name", "query": 42}}',
+        '{"text": {"path": "name"}}',
+        '{"compound": {"filter": [{"exists": {"path": "missing"}}]}}',
+        '{"text": {"path": "details.title", "query": "phone"}}',
+        '{"autocomplete": {"path": "name", "query": "ph", "tokenOrder": "invalid"}}',
+        '{"text": {"path": "name", "query": "phone", "fuzzy": {"maxEdits": 3}}}',
+        '{"text": {"path": "name", "query": "phone"}, "sort": {"missing": 1}}',
+        '{"text": {"path": "name", "query": "phone"}, "returnStoredSource": True}',
+        '{"text": {"path": "name", "query": "phone"}, "index": 1}',
+        '{"txet": {"path": "name", "query": "phone"}}',
+        '{"text": {"path": "name", "query": "phone"}, "returnScope": {"path": "details"}}',
+    ]
+    (tmp_path / "invalid.py").write_text(
+        "from generated import ProductSearchStage, ProductPipelineStage, ProductSearchMetaStage\n"
+        + "\n".join(
+            f'bad{i}: ProductSearchStage = {{"$search": {query}}}'
+            for i, query in enumerate(invalid_queries)
+        )
+        + '\nmetadata_pipeline: ProductPipelineStage = {"$searchMeta": {"exists": {"path": "name"}}}'
+        + '\ninvalid_metadata: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "missing"}}}'
+        + '\nmetadata_sort: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "sort": {"price": 1}}}'
+        + '\nmetadata_scope: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "returnScope": {"path": "missing"}}}'
+    )
+    config = tmp_path / "pyrightconfig.json"
+    config.write_text(
+        json.dumps(
+            {
+                "include": ["valid.py", "invalid.py", "generated.pyi"],
+                "pythonVersion": "3.12",
+                "typeCheckingMode": "standard",
+            }
+        )
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "basedpyright",
+            "--outputjson",
+            "--pythonpath",
+            sys.executable,
+            "--project",
+            str(config),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    report = json.loads(result.stdout)
+    diagnostics = report["generalDiagnostics"]
+    unexpected = [d for d in diagnostics if Path(d["file"]).name != "invalid.py"]
+    assert not unexpected, unexpected
+    rejected_lines = {
+        d["range"]["start"]["line"] for d in diagnostics if d["severity"] == "error"
+    }
+    assert rejected_lines == set(range(1, len(invalid_queries) + 5)), diagnostics
 
 
 def test_end_to_end_generation(tmp_path: Path):

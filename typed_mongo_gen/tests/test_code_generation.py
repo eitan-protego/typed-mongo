@@ -1,10 +1,12 @@
 """Tests for code generation."""
 
 import io
+import json
+import runpy
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 from typed_mongo_gen.codegen import write_field_paths, write_typeddict
 from typed_mongo_gen.introspect import has_default
@@ -699,6 +701,7 @@ def test_pipeline_stage_union_updated(tmp_path: Path):
     assert "type MixedPipelineStage = " in content
     stage_section = content.split("type MixedPipelineStage = ")[1].split("\n\n")[0]
     assert "MixedMatchStage" in stage_section
+    assert "MixedSearchStage" in stage_section
     assert "MixedSortStage" in stage_section
     assert "MixedLimitStage" in stage_section
     assert "MixedSkipStage" in stage_section
@@ -716,12 +719,29 @@ def test_runtime_has_aggregation_aliases(tmp_path: Path):
     content = runtime_path.read_text()
     assert "type MixedOptionalPath = str" in content
     assert "MixedMatchStage = dict[str, Any]" in content
+    assert "MixedSearchStage = dict[str, Any]" in content
+    assert "MixedSearchOptions = dict[str, Any]" in content
+    assert "MixedSearchMetaStage = dict[str, Any]" in content
     assert "MixedSortStage = dict[str, Any]" in content
     assert "MixedLimitStage = dict[str, Any]" in content
     assert "MixedSkipStage = dict[str, Any]" in content
     assert "MixedSetStage = dict[str, Any]" in content
     assert "MixedAddFieldsStage = dict[str, Any]" in content
     assert "MixedAggUnsetStage = dict[str, Any]" in content
+
+
+def test_search_types_do_not_repeat_model_fields(tmp_path: Path):
+    """Search schema size stays fixed even for models with many paths."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Document": _TestModel})
+    content = stub_path.read_text().split("type DocumentSearchPath = ")[1]
+    content = content.split("DocumentMatchStage = ")[0]
+    assert "_search.SearchRange[DocumentPath]" in content
+    assert "_search.SearchCompound[DocumentSearchOperator]" in content
+    assert "_search.SearchStageOptions[DocumentPath]" in content
+    assert "DocumentSearchMetaStage" in content
+    assert len(content.splitlines()) < 65
 
 
 # --- Task 8: unsafe stages and aggregation_step ---
@@ -745,6 +765,8 @@ def test_unsafe_stage_types(tmp_path: Path):
     assert '"localField": MixedPath,' in content
     assert 'MixedBucketStage = TypedDict("MixedBucketStage"' in content
     assert 'MixedBucketAutoStage = TypedDict("MixedBucketAutoStage"' in content
+    unsafe_section = content.split("type MixedUnsafeStage = (")[1].split(")")[0]
+    assert "MixedSearchMetaStage" in unsafe_section
 
 
 def test_aggregation_step_function_stub(tmp_path: Path):
@@ -788,6 +810,24 @@ def test_generated_aggregation_code_compiles(tmp_path: Path):
 
     runtime_content = runtime_path.read_text()
     compile(runtime_content, "<test>", "exec")
+
+
+def test_generated_queries_and_pipelines_support_json_schema(tmp_path: Path):
+    """Consumers can execute stubs and build schemas without special config."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"TestModel": _TestModel})
+    types = runpy.run_path(str(stub_path))
+    pipeline_stage = types["TestModelPipelineStage"]
+    unsafe_stage = types["TestModelUnsafeStage"]
+
+    for annotation in (
+        types["TestModelQuery"],
+        list[pipeline_stage | unsafe_stage],
+    ):
+        schema = TypeAdapter(annotation).json_schema()
+        assert json.loads(json.dumps(schema)) == schema
+        assert schema["$defs"]["Regex"]["properties"]["$regex"]["type"] == "string"
 
 
 def test_no_optional_path_when_no_defaults(tmp_path: Path):

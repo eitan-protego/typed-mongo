@@ -39,7 +39,7 @@ await users.insert_one(User(name="Bob", email="bob@example.com"))
 
 ## Aggregation pipelines
 
-`aggregate()` accepts type-safe pipeline stages. Shape-preserving stages (match, sort, limit, skip, set, addFields, unset) return `TypedCursor[M]`. An optional `type_unsafe_pipeline_suffix` for shape-changing stages (group, unwind, project, lookup, bucket) returns `AsyncCursor[dict[str, Any]]`.
+`aggregate()` accepts type-safe pipeline stages. Shape-preserving stages (search, match, sort, limit, skip, set, addFields, unset) return `TypedCursor[M]`. An optional `type_unsafe_pipeline_suffix` for shape-changing stages (group, unwind, project, lookup, bucket) returns `AsyncCursor[dict[str, Any]]`.
 
 ```python
 # Safe pipeline — returns typed cursor
@@ -60,6 +60,47 @@ results = await users.aggregate(
 ```
 
 ## Operators
+
+### Atlas Search
+
+Regenerate your model types to use `$search` in typed pipelines:
+
+```python
+async for user in await users.aggregate([
+    {"$search": {
+        "index": "users",
+        "compound": {
+            "must": [{"text": {"path": "name", "query": "Alice"}}],
+            "filter": [{"range": {"path": "age", "gte": 18}}],
+        },
+    }},
+    {"$limit": 10},
+]):
+    print(user.name)
+```
+
+Generated `UserSearchStage` and `UserSearchOptions` check model field paths (including serialized aliases), required operator fields, and common options. Text, autocomplete, phrase, regex, wildcard, queryString, equals, in, exists, range, near, compound, and embeddedDocument have typed payloads. Wildcard path expressions and multi-analyzer paths are supported. Scoring, geometry, and other advanced operator payloads remain open dictionaries; equality values and range bounds are not checked against model field types.
+
+MongoDB requires `$search` to be the first stage; stage ordering, index configuration, and mutually exclusive options are validated by MongoDB, rather than these types. See the [MongoDB `$search` reference](https://www.mongodb.com/docs/search/query/aggregation-stages/search/).
+
+`returnStoredSource=True` and `returnScope` can change the result shape, so use the untyped `SearchStage` from `typed_mongo.operators` in an unsafe pipeline suffix for those options.
+
+`UserSearchMetaStage` checks metadata queries too. Pass it through `user_aggregation_step()` in an unsafe suffix, starting with an empty safe pipeline when `$searchMeta` is the first stage:
+
+```python
+results = await users.aggregate([], [
+    user_aggregation_step({"$searchMeta": {
+        "text": {"path": "name", "query": "Alice"},
+        "count": {"type": "total"},
+    }}),
+])
+```
+
+`UserSearchMetaOptions` follows the [metadata stage syntax](https://www.mongodb.com/docs/search/query/aggregation-stages/searchmeta/), including scoped results, and excludes document-only options such as sorting and highlighting.
+
+Field-only sorts accept typed mappings of model paths to `1` or `-1`. For a mixed field and score sort, use `typed_mongo.search.combine_search_sort()` with an explicitly typed field mapping; score sorts can use arbitrary output names. This follows the same approach as `combine_ops()` while avoiding another copy of every field path in generated stubs.
+
+### Query operators
 
 `Op[T]` represents MongoDB query operators for a field of type `T`:
 

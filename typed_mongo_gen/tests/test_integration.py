@@ -66,6 +66,8 @@ def test_search_pipeline_type_checking(tmp_path: Path):
         phrase: ProductSearchStage = {"$search": {"phrase": {"path": ["name", "details.displayTitle"], "query": "mobile phone", "slop": 1}}}
         inclusion: ProductSearchStage = {"$search": {"in": {"path": ["name"], "value": ["phone"]}}}
         metadata: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "count": {"type": "total"}}}
+        default_count: ProductSearchStage = {"$search": {"exists": {"path": "name"}, "count": {"threshold": 100}}}
+        scoped_metadata: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "returnScope": {"path": "details"}, "returnStoredSource": True}}
         bounds: ProductSearchRange = {"path": "price"}
         bounds["gte"] = 10
         compound: ProductSearchCompound = {"filter": [{"range": bounds}]}
@@ -100,6 +102,8 @@ def test_search_pipeline_type_checking(tmp_path: Path):
         )
         + '\nmetadata_pipeline: ProductPipelineStage = {"$searchMeta": {"exists": {"path": "name"}}}'
         + '\ninvalid_metadata: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "missing"}}}'
+        + '\nmetadata_sort: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "sort": {"price": 1}}}'
+        + '\nmetadata_scope: ProductSearchMetaStage = {"$searchMeta": {"exists": {"path": "name"}, "returnScope": {"path": "missing"}}}'
     )
     config = tmp_path / "pyrightconfig.json"
     config.write_text(
@@ -133,7 +137,7 @@ def test_search_pipeline_type_checking(tmp_path: Path):
     rejected_lines = {
         d["range"]["start"]["line"] for d in diagnostics if d["severity"] == "error"
     }
-    assert rejected_lines == set(range(1, len(invalid_queries) + 3)), diagnostics
+    assert rejected_lines == set(range(1, len(invalid_queries) + 5)), diagnostics
 
 
 def test_end_to_end_generation(tmp_path: Path):

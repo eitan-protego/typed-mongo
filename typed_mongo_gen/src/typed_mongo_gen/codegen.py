@@ -145,11 +145,21 @@ def _write_search_types(f: typing.TextIO, model_name: str) -> list[str]:
     f.write(
         f"class {prefix}Options({prefix}Operator, _search.SearchStageOptions[{path}]):\n    pass\n\n"
     )
+    f.write(
+        f"class {prefix}MetaOptions({prefix}Operator, _search.SearchMetaOptions[{path}]):\n    pass\n\n"
+    )
     write_typeddict(f, f"{prefix}Stage", [("$search", f"{prefix}Options")])
-    write_typeddict(f, f"{prefix}MetaStage", [("$searchMeta", f"{prefix}Options")])
+    write_typeddict(f, f"{prefix}MetaStage", [("$searchMeta", f"{prefix}MetaOptions")])
     return [
         f"{prefix}{suffix}"
-        for suffix in (*aliases, "Operator", "Options", "Stage", "MetaStage")
+        for suffix in (
+            *aliases,
+            "Operator",
+            "Options",
+            "MetaOptions",
+            "Stage",
+            "MetaStage",
+        )
     ]
 
 

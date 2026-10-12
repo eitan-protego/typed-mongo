@@ -96,6 +96,8 @@ results = await users.aggregate([], [
 ])
 ```
 
+`UserSearchMetaOptions` follows the [metadata stage syntax](https://www.mongodb.com/docs/search/query/aggregation-stages/searchmeta/), including scoped results, and excludes document-only options such as sorting and highlighting.
+
 Field-only sorts accept typed mappings of model paths to `1` or `-1`. For a mixed field and score sort, use `typed_mongo.search.combine_search_sort()` with an explicitly typed field mapping; score sorts can use arbitrary output names. This follows the same approach as `combine_ops()` while avoiding another copy of every field path in generated stubs.
 
 ### Query operators

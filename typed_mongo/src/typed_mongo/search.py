@@ -120,7 +120,7 @@ class SearchHighlight[Path: str](TypedDict):
     maxNumPassages: NotRequired[int]
 
 
-class SearchCount(TypedDict):
+class SearchCount(TypedDict, total=False):
     type: Literal["lowerBound", "total"]
     threshold: NotRequired[int]
 
@@ -150,15 +150,23 @@ def combine_search_sort[Path: str](
     return cast(SearchSort[Path], {**fields, **scores})
 
 
-class SearchStageOptions[Path: str](TypedDict, total=False):
+class _SearchCommonOptions(TypedDict, total=False):
     index: str
-    highlight: SearchHighlight[Path]
     count: SearchCount
     concurrent: bool
+    facet: dict[str, Any]
+
+
+class SearchStageOptions[Path: str](_SearchCommonOptions, total=False):
+    highlight: SearchHighlight[Path]
     scoreDetails: bool
     searchAfter: str
     searchBefore: str
     sort: SearchSort[Path]
     returnStoredSource: Literal[False]
     searchNodePreference: Mapping[Literal["key"], str]
-    facet: dict[str, Any]
+
+
+class SearchMetaOptions[Path: str](_SearchCommonOptions, total=False):
+    returnScope: Mapping[Literal["path"], Path]
+    returnStoredSource: bool

@@ -63,6 +63,7 @@ Each job inherits from `defaults` — any field not set on a job falls back to t
 | `{Name}SearchOptions` | Search operators, compound clauses, highlighting, sorting, and pagination |
 | `{Name}SearchOperator` | A search clause, including recursive compound and embedded document clauses |
 | `{Name}SearchMetaStage` | Atlas `$searchMeta` stage, available in the unsafe pipeline suffix |
+| `{Name}SearchMetaOptions` | Metadata operators and options, excluding document sorting and highlighting |
 | `{Name}UnsafeStage` | Union of shape-changing stages |
 | `{Name}Collection` | Concrete `TypedCollection` subclass |
 | `{name}_aggregation_step()` | Type-checks an unsafe stage, returns `AggregationStep` |

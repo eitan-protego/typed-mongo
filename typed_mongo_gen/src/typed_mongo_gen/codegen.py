@@ -874,7 +874,12 @@ def _write_typed_dump(
     # Sort subclasses before parents so overloads don't shadow each other
     sorted_models = sorted(
         model_dict_names.items(),
-        key=lambda item: (-len(item[0].__mro__), item[0].__qualname__),
+        key=lambda item: (
+            -len(item[0].__mro__),
+            item[0].__qualname__,
+            item[0].__module__,
+            item[1],
+        ),
     )
     for model_cls, dict_name in sorted_models:
         model_ref = _annotation_to_source(model_cls, module_aliases)
@@ -933,7 +938,10 @@ def _topological_order(
     ts.prepare()
     result: list[type[BaseModel]] = []
     while ts.is_active():
-        ready = sorted(ts.get_ready(), key=lambda m: m.__qualname__)
+        ready = sorted(
+            ts.get_ready(),
+            key=lambda m: (m.__qualname__, m.__module__, all_models[m]),
+        )
         result.extend(ready)
         ts.done(*ready)
     return result

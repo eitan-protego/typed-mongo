@@ -1,10 +1,12 @@
 """Tests for code generation."""
 
 import io
+import json
+import runpy
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 from typed_mongo_gen.codegen import write_field_paths, write_typeddict
 from typed_mongo_gen.introspect import has_default
@@ -808,6 +810,24 @@ def test_generated_aggregation_code_compiles(tmp_path: Path):
 
     runtime_content = runtime_path.read_text()
     compile(runtime_content, "<test>", "exec")
+
+
+def test_generated_queries_and_pipelines_support_json_schema(tmp_path: Path):
+    """Consumers can execute stubs and build schemas without special config."""
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"TestModel": _TestModel})
+    types = runpy.run_path(str(stub_path))
+    pipeline_stage = types["TestModelPipelineStage"]
+    unsafe_stage = types["TestModelUnsafeStage"]
+
+    for annotation in (
+        types["TestModelQuery"],
+        list[pipeline_stage | unsafe_stage],
+    ):
+        schema = TypeAdapter(annotation).json_schema()
+        assert json.loads(json.dumps(schema)) == schema
+        assert schema["$defs"]["Regex"]["properties"]["$regex"]["type"] == "string"
 
 
 def test_no_optional_path_when_no_defaults(tmp_path: Path):

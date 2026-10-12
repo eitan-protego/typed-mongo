@@ -409,7 +409,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pydantic", specifier = ">=2.3" },
     { name = "pymongo", specifier = ">=4.0" },
 ]
 

@@ -1,6 +1,7 @@
 """Tests for MongoDB operator TypedDict definitions."""
 
 from bson import Regex as BsonRegex
+from pydantic import TypeAdapter
 
 from typed_mongo.collection import TypedCollection
 from typed_mongo.operators import (
@@ -100,6 +101,17 @@ def test_str_op_accepts_bson_regex():
     value: StrOp = BsonRegex("^test.*", "i")
 
     assert value == BsonRegex("^test.*", "i")
+
+
+def test_string_operators_support_json_schema_and_python_regex():
+    """BSON regex is a Python query value, not an additional JSON input form."""
+    adapter = TypeAdapter[StrOp](StrOp)
+    regex = BsonRegex("^test.*", "i")
+    assert adapter.validate_python(regex) is regex
+    assert adapter.validate_python({"$regex": regex}) == {"$regex": regex}
+    schema = adapter.json_schema()
+    assert schema["$defs"]["Regex"]["properties"]["$regex"]["type"] == "string"
+    assert "bson.regex" not in str(schema)
 
 
 def test_op_rejects_bson_regex():

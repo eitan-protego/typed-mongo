@@ -10,9 +10,22 @@ Usage — callers write plain dict literals; the type checker validates::
 """
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import Annotated, Any, Literal, NotRequired, TypedDict, cast
 
 from bson import Regex as BsonRegex
+from pydantic import GetPydanticSchema
+from pydantic.json_schema import SkipJsonSchema
+from pydantic_core import core_schema
+
+# BSON regex objects are Python-only; JSON queries use strings or $regex strings.
+_BsonRegex = SkipJsonSchema[
+    Annotated[
+        BsonRegex[str],
+        GetPydanticSchema(
+            lambda _type, _handler: core_schema.is_instance_schema(BsonRegex)
+        ),
+    ]
+]
 
 
 # --- Generic operators (parameterized by field value type T) ---
@@ -34,16 +47,14 @@ type ListOp[T] = Mapping[Literal["$in", "$nin"], Sequence[T]]
 # --- Non-generic operators ---
 
 Exists = TypedDict("Exists", {"$exists": bool})
-Regex = TypedDict(
-    "Regex", {"$regex": str | BsonRegex[str], "$options": NotRequired[str]}
-)
+Regex = TypedDict("Regex", {"$regex": str | _BsonRegex, "$options": NotRequired[str]})
 type ElemMatch[T] = Mapping[Literal["$elemMatch"], T]
 
 # --- Union of all operators ---
 type NontrivialOp[T] = SelfOp[T] | ListOp[T] | Exists
 type Op[T] = T | NontrivialOp[T]
 type NontrivialStrOp = NontrivialOp[str] | Regex
-type StrOp = str | BsonRegex[str] | NontrivialStrOp
+type StrOp = str | _BsonRegex | NontrivialStrOp
 """
 Due to limitations of Python's type system, Op cannot match a predicate that combines
 different types of operators. If you need to use both generic and non-generic operators

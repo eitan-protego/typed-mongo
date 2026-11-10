@@ -42,3 +42,49 @@ def test_transaction_operations_forward_session() -> None:
         assert raw.delete_one.call_args.kwargs["session"] is session
 
     asyncio.run(run())
+
+
+def test_with_options_preserves_model_validation() -> None:
+    from unittest.mock import patch
+
+    import pytest
+    from pydantic import ValidationError
+    from pymongo import AsyncMongoClient, ReadPreference
+    from typed_mongo.collection import TypedCursor
+
+    async def run() -> None:
+        client: AsyncMongoClient[dict[str, Any]] = AsyncMongoClient(connect=False)
+        original = TypedCollection[
+            SampleModel,
+            dict[str, Any],
+            str,
+            dict[str, Any],
+            dict[str, Any],
+            dict[str, Any],
+            dict[str, Any],
+        ](SampleModel, client.test.tests)
+        configured = original.with_options(read_preference=ReadPreference.NEAREST)
+        assert configured is not original
+        assert configured.raw.read_preference == ReadPreference.NEAREST
+        assert original.raw.read_preference == ReadPreference.PRIMARY
+        assert configured.with_options().raw.read_preference == ReadPreference.NEAREST
+        assert configured.raw.full_name == original.raw.full_name
+        assert configured.raw.database.client is client
+
+        raw_cursor = AsyncMock()
+        raw_cursor.to_list.return_value = [{"value": "valid"}]
+        pipeline = [{"$match": {"value": "valid"}}]
+        with patch.object(
+            AsyncCollection, "aggregate", new_callable=AsyncMock
+        ) as aggregate:
+            aggregate.return_value = raw_cursor
+            cursor = await configured.aggregate(pipeline)
+            assert isinstance(cursor, TypedCursor)
+            assert await cursor.to_list() == [SampleModel(value="valid")]
+            aggregate.assert_awaited_once_with(pipeline)
+            raw_cursor.to_list.return_value = [{"value": {}}]
+            with pytest.raises(ValidationError):
+                await cursor.to_list()
+        await client.close()
+
+    asyncio.run(run())

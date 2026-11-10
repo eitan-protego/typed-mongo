@@ -24,6 +24,13 @@ from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.command_cursor import AsyncCommandCursor
 from pymongo.asynchronous.cursor import AsyncCursor
 from pymongo.asynchronous.database import AsyncDatabase
+from pymongo.read_preferences import (
+    Nearest,
+    Primary,
+    PrimaryPreferred,
+    Secondary,
+    SecondaryPreferred,
+)
 from pymongo.results import DeleteResult, InsertOneResult, UpdateResult
 
 from typed_mongo.model import MongoCollectionModel
@@ -129,6 +136,25 @@ class TypedCollection[
         """Factory: create a TypedCollection from a database and model class."""
         collection = model.get_collection(db)
         return cls(model, collection)
+
+    def with_options(
+        self,
+        *,
+        read_preference: Primary
+        | PrimaryPreferred
+        | Secondary
+        | SecondaryPreferred
+        | Nearest
+        | None = None,
+    ) -> TypedCollection[M, Model, Path, Query, Fields, Update, PipelineStage]:
+        """Return a typed collection with an overridden read preference.
+
+        As in PyMongo, None preserves the current read preference.
+        """
+        return TypedCollection(
+            self._model,
+            self._collection.with_options(read_preference=read_preference),
+        )
 
     # --- Read operations ---
 

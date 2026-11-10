@@ -42,6 +42,7 @@ def test_search_pipeline_type_checking(tmp_path: Path):
 
     (tmp_path / "valid.py").write_text(
         dedent("""\
+        from pymongo import ReadPreference
         from typing import Literal, assert_type
         from models import Product
         from generated import ProductCollection, ProductPath, ProductPipelineStage, ProductSearchStage, ProductSearchMetaStage, ProductSearchCompound, ProductSearchRange, ProductSearchSort, product_aggregation_step
@@ -80,9 +81,10 @@ def test_search_pipeline_type_checking(tmp_path: Path):
         sort: ProductSearchSort = {"price": -1, "name": 1}
 
         async def search(collection: ProductCollection) -> None:
-            cursor = await collection.aggregate(pipeline)
+            collection_options = collection.with_options(read_preference=ReadPreference.NEAREST)
+            cursor = await collection_options.aggregate(pipeline)
             assert_type(cursor, TypedCursor[Product, ProductPath])
-            await collection.aggregate([], [product_aggregation_step(metadata)])
+            await collection_options.aggregate([], [product_aggregation_step(metadata)])
     """)
     )
     invalid_queries = [
@@ -112,6 +114,13 @@ def test_search_pipeline_type_checking(tmp_path: Path):
         + '\ndisabled_search: CatalogPipelineStage = {"$search": {"exists": {"path": "name"}}}'
         + '\ndisabled_metadata: CatalogUnsafeStage = {"$searchMeta": {"exists": {"path": "name"}}}'
     )
+    with (tmp_path / "invalid.py").open("a") as invalid:
+        invalid.write(
+            "\nfrom generated import ProductCollection\n"
+            + "from pymongo import ReadPreference\n"
+            + "async def invalid_override(collection: ProductCollection) -> None:\n"
+            + '    await collection.with_options(read_preference=ReadPreference.NEAREST).aggregate([{"$match": {"missing": "bad"}}])\n'
+        )
     config = tmp_path / "pyrightconfig.json"
     config.write_text(
         json.dumps(
@@ -144,7 +153,9 @@ def test_search_pipeline_type_checking(tmp_path: Path):
     rejected_lines = {
         d["range"]["start"]["line"] for d in diagnostics if d["severity"] == "error"
     }
-    assert rejected_lines == set(range(1, len(invalid_queries) + 7)), diagnostics
+    assert rejected_lines == set(range(1, len(invalid_queries) + 7)) | {
+        len(invalid_queries) + 10
+    }, diagnostics
 
 
 def test_end_to_end_generation(tmp_path: Path):

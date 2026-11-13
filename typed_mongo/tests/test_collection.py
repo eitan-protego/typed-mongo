@@ -44,6 +44,49 @@ def test_transaction_operations_forward_session() -> None:
     asyncio.run(run())
 
 
+def test_find_one_sort() -> None:
+    async def run() -> None:
+        raw = AsyncMock()
+
+        async def find_one(filter: dict[str, Any], *, sort: Any, session: Any) -> Any:
+            assert session is marker
+            docs = [
+                doc
+                for doc in [{"value": "a"}, {"value": "b"}]
+                if all(doc.get(k) == v for k, v in filter.items())
+            ]
+            return (
+                sorted(docs, key=lambda doc: doc[sort[0][0]], reverse=sort[0][1] == -1)[
+                    0
+                ]
+                if docs
+                else None
+            )
+
+        raw.find_one.side_effect = find_one
+        collection: TypedCollection[
+            SampleModel,
+            dict[str, Any],
+            str,
+            dict[str, Any],
+            dict[str, Any],
+            dict[str, Any],
+            dict[str, Any],
+        ] = TypedCollection(SampleModel, cast(AsyncCollection[dict[str, Any]], raw))
+        marker = cast(AsyncClientSession, object())
+        assert await collection.find_one(
+            {}, sort=[("value", -1)], session=marker
+        ) == SampleModel(value="b")
+        assert (
+            await collection.find_one(
+                {"value": "missing"}, sort=[("value", 1)], session=marker
+            )
+            is None
+        )
+
+    asyncio.run(run())
+
+
 def test_with_options_preserves_model_validation() -> None:
     from unittest.mock import patch
 

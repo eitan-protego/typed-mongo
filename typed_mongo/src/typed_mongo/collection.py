@@ -159,10 +159,16 @@ class TypedCollection[
     # --- Read operations ---
 
     async def find_one(
-        self, filter: Query, *, session: AsyncClientSession | None = None
+        self,
+        filter: Query,
+        *,
+        sort: Sequence[tuple[Path, _Direction]]
+        | Mapping[Path, _Direction]
+        | None = None,
+        session: AsyncClientSession | None = None,
     ) -> M | None:
         """Find a single document matching the filter."""
-        doc = await self._collection.find_one(filter, session=session)
+        doc = await self._collection.find_one(filter, sort=sort, session=session)
         if doc is None:
             return None
         return self._model.model_validate(doc)

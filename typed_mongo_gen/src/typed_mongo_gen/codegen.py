@@ -471,6 +471,68 @@ def _to_snake_case(name: str) -> str:
     return s.lower()
 
 
+def _object_element_models(annotation: Any) -> list[type[BaseModel]]:
+    """Find object variants of an array element without descending into more arrays."""
+    if isinstance(annotation, typing.TypeAliasType):
+        return _object_element_models(annotation.__value__)
+    origin = get_origin(annotation)
+    if origin is typing.Annotated:
+        return _object_element_models(get_args(annotation)[0])
+    if origin is types.UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated]
+        return [
+            model
+            for arg in get_args(annotation)
+            for model in _object_element_models(arg)
+        ]
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return [annotation]
+    return []
+
+
+def _write_query(
+    stub_f: typing.TextIO,
+    model_name: str,
+    path_types: dict[str, Any],
+    module_aliases: dict[str, str],
+    model_dict_names: dict[type, str],
+) -> None:
+    query_entries: list[tuple[str, str]] = []
+    for path in sorted(path_types):
+        type_src = _annotation_to_source(
+            path_types[path], module_aliases, model_dict_names
+        )
+        if type_src == "dict[str, Any]":
+            query_entries.append((path, type_src))
+        else:
+            query_val_src = _query_value_type_src(
+                path_types[path], module_aliases, model_dict_names
+            )
+            op_type = "StrOp" if path_types[path] is str else f"Op[{query_val_src}]"
+            if path_types[path] is not str and _contains_str(path_types[path]):
+                op_type = f"{op_type} | StrOp"
+            elem_type = extract_list_element_type(path_types[path])
+            if elem_type is not None:
+                elem_src = _annotation_to_source(
+                    elem_type, module_aliases, model_dict_names
+                )
+                elem_op = f"NontrivialOp[{elem_src}]"
+                if elem_type is str:
+                    elem_op = "NontrivialStrOp"
+                elif _contains_str(elem_type):
+                    elem_op = f"{elem_op} | NontrivialStrOp"
+                for nested in _object_element_models(elem_type):
+                    query_name = model_dict_names[nested].removesuffix("Dict") + "Query"
+                    elem_op += f' | "{query_name}"'
+                op_type = f"{op_type} | ElemMatch[{elem_op}]"
+            query_entries.append((path, op_type))
+    query_entries.append(("$expr", "dict[str, Any]"))
+    query_entries.append(("$and", f'list["{model_name}Query"]'))
+    query_entries.append(("$or", f'list["{model_name}Query"]'))
+    query_entries.append(("$nor", f'list["{model_name}Query"]'))
+    query_entries.append(("$not", f'"{model_name}Query"'))
+    write_typeddict(stub_f, f"{model_name}Query", query_entries, total=False)
+
+
 def _write_model(
     runtime_f: typing.TextIO,
     stub_f: typing.TextIO,
@@ -554,39 +616,7 @@ def _write_model(
     ]
     write_typeddict(stub_f, f"{model_name}Dict", model_entries)
 
-    # Query TypedDict (with Op[T]; list[T] fields use Op[T | list[T]] | ElemMatch[...])
-    query_entries: list[tuple[str, str]] = []
-    for path in sorted(path_types):
-        type_src = _annotation_to_source(
-            path_types[path], module_aliases, model_dict_names
-        )
-        if type_src == "dict[str, Any]":
-            query_entries.append((path, type_src))
-        else:
-            query_val_src = _query_value_type_src(
-                path_types[path], module_aliases, model_dict_names
-            )
-            op_type = "StrOp" if path_types[path] is str else f"Op[{query_val_src}]"
-            if path_types[path] is not str and _contains_str(path_types[path]):
-                op_type = f"{op_type} | StrOp"
-            elem_type = extract_list_element_type(path_types[path])
-            if elem_type is not None:
-                elem_src = _annotation_to_source(
-                    elem_type, module_aliases, model_dict_names
-                )
-                elem_op = f"NontrivialOp[{elem_src}]"
-                if elem_type is str:
-                    elem_op = "NontrivialStrOp"
-                elif _contains_str(elem_type):
-                    elem_op = f"{elem_op} | NontrivialStrOp"
-                op_type = f"{op_type} | ElemMatch[{elem_op}]"
-            query_entries.append((path, op_type))
-    query_entries.append(("$expr", "dict[str, Any]"))
-    query_entries.append(("$and", f'list["{model_name}Query"]'))
-    query_entries.append(("$or", f'list["{model_name}Query"]'))
-    query_entries.append(("$nor", f'list["{model_name}Query"]'))
-    query_entries.append(("$not", f'"{model_name}Query"'))
-    write_typeddict(stub_f, f"{model_name}Query", query_entries, total=False)
+    _write_query(stub_f, model_name, path_types, module_aliases, model_dict_names)
 
     # Fields TypedDict (exact types)
     fields_entries = [
@@ -1017,6 +1047,18 @@ def write_field_paths(
                 dict_name = model_dict_names[model_cls]
                 _write_nested_dict(
                     stub_f, model_cls, dict_name, module_aliases, model_dict_names
+                )
+
+        # Nested object predicates use the same aliased paths and operators as root queries.
+        for model_cls in sorted_models:
+            if model_cls not in top_level_classes:
+                name = model_dict_names[model_cls].removesuffix("Dict")
+                _write_query(
+                    stub_f,
+                    name,
+                    collect_field_path_types(model_cls),
+                    module_aliases,
+                    model_dict_names,
                 )
 
         # Emit top-level models in dependency order

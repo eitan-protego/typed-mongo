@@ -59,6 +59,25 @@ Search typing needs only Pydantic field paths and `__collection_name__` for sele
 2. Executes each file with `runpy.run_path()` and scans globals for `MongoCollectionModel` subclasses
 3. Emits a runtime `.py` (simple aliases) and a `.pyi` stub (full type definitions)
 
+## Object-array predicates
+
+Generated queries accept aliased object fields inside `$elemMatch`, including
+dotted paths, logical predicates, and nested object-array `$elemMatch`:
+
+```python
+query: CaseQuery = {
+    "summary.ediDates": {
+        "$elemMatch": {"mostRecent": {"$gte": start, "$lt": end}}
+    }
+}
+```
+
+For `list[PcnEDIDate]`, the generator adds `PcnEDIDateQuery` to the existing
+`ElemMatch[NontrivialOp[PcnEDIDateDict]]` payload. Field names and operator
+values remain checked. Scalar-array predicates and complete object equality
+continue to use their existing types. Regenerate both output files after
+upgrading the generator; no runtime operator change is required.
+
 ## Generated types per model
 
 | Type | Description |

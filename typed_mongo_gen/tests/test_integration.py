@@ -403,3 +403,104 @@ def test_pyproject_no_config_no_sources(tmp_path: Path):
 
     assert result.returncode == 1
     assert "No [tool.typed-mongo-gen] config found" in result.stderr
+
+
+def test_object_array_elem_match_type_checking(tmp_path: Path):
+    """Object predicates retain aliases, nested arrays, and operator validation."""
+    models_file = tmp_path / "models.py"
+    models_file.write_text(
+        dedent("""\
+        from datetime import date, datetime
+        from pydantic import BaseModel, Field
+        from typed_mongo import MongoCollectionModel
+
+        class EDIDate(MongoCollectionModel):
+            pcn: str
+            most_recent: date = Field(alias="mostRecent")
+
+        class Activity(BaseModel):
+            created_at: datetime = Field(alias="createdAt")
+
+        class UserState(BaseModel):
+            status_id: str = Field(alias="statusId")
+            activity: list[Activity]
+
+        class Summary(BaseModel):
+            edi_dates: list[EDIDate] = Field(alias="ediDates")
+
+        class Case(MongoCollectionModel):
+            summary: Summary
+            pcn_user_states: list[UserState] = Field(alias="pcnUserStates")
+            tags: list[str]
+            counts: list[int]
+            optional_dates: list[EDIDate] | None = None
+            mixed: list[EDIDate | Activity]
+    """)
+    )
+    models = runpy.run_path(str(models_file), run_name="models")
+    write_field_paths(
+        tmp_path / "generated.py",
+        tmp_path / "generated.pyi",
+        {"Case": models["Case"], "EDIDate": models["EDIDate"]},
+    )
+    stub = (tmp_path / "generated.pyi").read_text()
+    assert 'ElemMatch[NontrivialOp[EDIDateDict] | "EDIDateQuery"]' in stub
+    assert 'ElemMatch[NontrivialOp[ActivityDict] | "ActivityQuery"]' in stub
+    valid = [
+        '{"pcnUserStates.statusId": {"$in": ["waiting"]}, "$or": [{"summary.ediDates": {"$elemMatch": {"mostRecent": {"$gte": start, "$lt": end}}}}, {"pcnUserStates.activity": {"$elemMatch": {"createdAt": {"$gte": start, "$lt": end}}}}]}',
+        '{"pcnUserStates": {"$elemMatch": {"activity": {"$elemMatch": {"createdAt": {"$gte": start}}}, "statusId": "waiting"}}}',
+        '{"pcnUserStates": {"$elemMatch": {"activity.createdAt": {"$lt": end}}}}',
+        '{"summary.ediDates": {"$elemMatch": {"$or": [{"pcn": "a"}, {"mostRecent": {"$lt": end}}]}}}',
+        '{"summary.ediDates": {"$eq": {"pcn": "a", "mostRecent": day}}}',
+        '{"summary.ediDates": {"$elemMatch": {"$eq": {"pcn": "a", "mostRecent": day}}}}',
+        '{"summary.ediDates": [{"pcn": "a", "mostRecent": day}]}',
+        '{"tags": {"$elemMatch": {"$regex": "^a"}}, "counts": {"$elemMatch": {"$gt": 1}}}',
+        '{"optional_dates": {"$elemMatch": {"mostRecent": {"$lt": end}}}}',
+        '{"mixed": {"$elemMatch": {"createdAt": {"$gte": start}}}}',
+    ]
+    invalid = [
+        '{"summary.ediDates": {"$elemMatch": {"missing": 1}}}',
+        '{"summary.ediDates": {"$elemMatch": {"most_recent": {"$gte": start}}}}',
+        '{"summary.ediDates": {"$elemMatch": {"mostRecent": {"$gte": "yesterday"}}}}',
+        '{"summary.ediDates": {"$elemMatch": {"mostRecent": {"$bogus": start}}}}',
+        '{"pcnUserStates": {"$elemMatch": {"activity": {"$elemMatch": {"created_at": start}}}}}',
+        '{"counts": {"$elemMatch": {"missing": 1}}}',
+        '{"summary.ediDates": {"$eq": {"mostRecent": day}}}',
+        '{"summary.ediDates": {"$elemMatch": {"$eq": {"mostRecent": day}}}}',
+    ]
+    header = "from datetime import date, datetime\nfrom generated import CaseQuery\nstart = datetime(2026, 1, 1)\nend = datetime(2026, 2, 1)\nday = date(2026, 1, 1)\n"
+    for name, queries in (("valid", valid), ("invalid", invalid)):
+        (tmp_path / f"{name}.py").write_text(
+            header
+            + "\n".join(f"q{i}: CaseQuery = {query}" for i, query in enumerate(queries))
+        )
+    config = tmp_path / "pyrightconfig.json"
+    config.write_text(
+        json.dumps(
+            {
+                "include": ["valid.py", "invalid.py", "generated.pyi"],
+                "pythonVersion": "3.12",
+                "typeCheckingMode": "standard",
+            }
+        )
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "basedpyright",
+            "--outputjson",
+            "--pythonpath",
+            sys.executable,
+            "--project",
+            str(config),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    diagnostics = json.loads(result.stdout)["generalDiagnostics"]
+    assert all(Path(d["file"]).name == "invalid.py" for d in diagnostics), diagnostics
+    assert {
+        d["range"]["start"]["line"] for d in diagnostics if d["severity"] == "error"
+    } == set(range(5, 5 + len(invalid))), diagnostics

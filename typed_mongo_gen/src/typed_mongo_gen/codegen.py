@@ -416,7 +416,7 @@ Do not edit manually. Regenerate with:
 
     # typing imports (always direct)
     typing_names = {n for m, n in all_imports if m == "typing"}
-    typing_names |= {"Literal", "Any", "overload"}
+    typing_names |= {"Literal", "Any", "Union", "overload"}
     typing_names |= {"NotRequired", "Required", "TypedDict"}
     stub_f.write(f"from typing import {', '.join(sorted(typing_names))}\n")
 
@@ -495,7 +495,12 @@ def _write_query(
     path_types: dict[str, Any],
     module_aliases: dict[str, str],
     model_dict_names: dict[type, str],
+    *,
+    element_predicate: bool = False,
 ) -> None:
+    query_name = (
+        f"{model_name}ElemMatchQuery" if element_predicate else f"{model_name}Query"
+    )
     query_entries: list[tuple[str, str]] = []
     for path in sorted(path_types):
         type_src = _annotation_to_source(
@@ -520,17 +525,23 @@ def _write_query(
                     elem_op = "NontrivialStrOp"
                 elif _contains_str(elem_type):
                     elem_op = f"{elem_op} | NontrivialStrOp"
+                element_predicates = [elem_op]
                 for nested in _object_element_models(elem_type):
-                    query_name = model_dict_names[nested].removesuffix("Dict") + "Query"
-                    elem_op += f' | "{query_name}"'
+                    nested_name = (
+                        model_dict_names[nested].removesuffix("Dict") + "ElemMatchQuery"
+                    )
+                    element_predicates.append(f'"{nested_name}"')
+                # Union converts string operands to ForwardRef during stub execution.
+                if len(element_predicates) > 1:
+                    elem_op = f"Union[{', '.join(element_predicates)}]"
                 op_type = f"{op_type} | ElemMatch[{elem_op}]"
             query_entries.append((path, op_type))
-    query_entries.append(("$expr", "dict[str, Any]"))
-    query_entries.append(("$and", f'list["{model_name}Query"]'))
-    query_entries.append(("$or", f'list["{model_name}Query"]'))
-    query_entries.append(("$nor", f'list["{model_name}Query"]'))
-    query_entries.append(("$not", f'"{model_name}Query"'))
-    write_typeddict(stub_f, f"{model_name}Query", query_entries, total=False)
+    if not element_predicate:
+        query_entries.append(("$expr", "dict[str, Any]"))
+        query_entries.append(("$not", f'"{query_name}"'))
+    for operator in ("$and", "$or", "$nor"):
+        query_entries.append((operator, f'list["{query_name}"]'))
+    write_typeddict(stub_f, query_name, query_entries, total=False)
 
 
 def _write_model(
@@ -604,17 +615,6 @@ def _write_model(
     stub_f.write(f"type {model_name}Path = Literal[\n")
     stub_f.writelines(f'    "{path}",\n' for path in paths)
     stub_f.write("]\n\n")
-
-    # Dict TypedDict (top-level fields only, total=True — matches model_dump() output)
-    model_entries = [
-        (
-            path,
-            _annotation_to_source(path_types[path], module_aliases, model_dict_names),
-        )
-        for path in sorted(path_types)
-        if "." not in path
-    ]
-    write_typeddict(stub_f, f"{model_name}Dict", model_entries)
 
     _write_query(stub_f, model_name, path_types, module_aliases, model_dict_names)
 
@@ -1041,15 +1041,26 @@ def write_field_paths(
             search_enabled=bool(selected_search),
         )
 
-        # Emit standalone Dict TypedDicts for nested-only models (in dependency order)
+        # Emit every Dict before predicates, including top-level models used in arrays.
         for model_cls in sorted_models:
-            if model_cls not in top_level_classes:
-                dict_name = model_dict_names[model_cls]
-                _write_nested_dict(
-                    stub_f, model_cls, dict_name, module_aliases, model_dict_names
-                )
+            dict_name = model_dict_names[model_cls]
+            _write_nested_dict(
+                stub_f, model_cls, dict_name, module_aliases, model_dict_names
+            )
 
-        # Nested object predicates use the same aliased paths and operators as root queries.
+        # Element predicates exclude root-only operators, including in logical branches.
+        for model_cls in sorted_models:
+            name = model_dict_names[model_cls].removesuffix("Dict")
+            runtime_f.write(f"{name}ElemMatchQuery = dict[str, Any]\n")
+            _write_query(
+                stub_f,
+                name,
+                collect_field_path_types(model_cls),
+                module_aliases,
+                model_dict_names,
+                element_predicate=True,
+            )
+
         for model_cls in sorted_models:
             if model_cls not in top_level_classes:
                 name = model_dict_names[model_cls].removesuffix("Dict")

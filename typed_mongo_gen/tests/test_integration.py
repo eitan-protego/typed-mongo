@@ -4,8 +4,11 @@ import subprocess
 import sys
 import json
 import runpy
+import pytest
 from pathlib import Path
 from textwrap import dedent
+
+from pydantic import TypeAdapter
 
 from typed_mongo_gen.codegen import write_field_paths
 
@@ -405,7 +408,9 @@ def test_pyproject_no_config_no_sources(tmp_path: Path):
     assert "No [tool.typed-mongo-gen] config found" in result.stderr
 
 
-def test_object_array_elem_match_type_checking(tmp_path: Path):
+def test_object_array_elem_match_type_checking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Object predicates retain aliases, nested arrays, and operator validation."""
     models_file = tmp_path / "models.py"
     models_file.write_text(
@@ -428,7 +433,27 @@ def test_object_array_elem_match_type_checking(tmp_path: Path):
         class Summary(BaseModel):
             edi_dates: list[EDIDate] = Field(alias="ediDates")
 
+        class DentLine(BaseModel):
+            tooth: str
+
+        class ProfLine(BaseModel):
+            procedure: int
+
+        class InstLine(BaseModel):
+            revenue: str
+
+        class Dental(BaseModel):
+            service_lines: list[DentLine] = Field(alias="serviceLines")
+
+        class Professional(BaseModel):
+            service_lines: list[ProfLine] = Field(alias="serviceLines")
+
+        class Institutional(BaseModel):
+            service_lines: list[InstLine] = Field(alias="serviceLines")
+
         class Case(MongoCollectionModel):
+            parsed_data: Dental | Professional | Institutional = Field(alias="parsedData")
+            alternative_lines: list[DentLine] | list[ProfLine] | None = None
             summary: Summary
             pcn_user_states: list[UserState] = Field(alias="pcnUserStates")
             tags: list[str]
@@ -444,9 +469,35 @@ def test_object_array_elem_match_type_checking(tmp_path: Path):
         {"Case": models["Case"], "EDIDate": models["EDIDate"]},
     )
     stub = (tmp_path / "generated.pyi").read_text()
-    assert 'ElemMatch[NontrivialOp[EDIDateDict] | "EDIDateQuery"]' in stub
-    assert 'ElemMatch[NontrivialOp[ActivityDict] | "ActivityQuery"]' in stub
+    assert (
+        'ElemMatch[Union[NontrivialOp[EDIDateDict], "EDIDateElemMatchQuery"]]' in stub
+    )
+    assert (
+        'ElemMatch[Union[NontrivialOp[ActivityDict], "ActivityElemMatchQuery"]]' in stub
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))  # pyright: ignore[reportUnknownMemberType]
+    types = runpy.run_path(str(tmp_path / "generated.pyi"))
+    pipeline_stage = types["CasePipelineStage"]
+    unsafe_stage = types["CaseUnsafeStage"]
+    for annotation in (types["CaseQuery"], list[pipeline_stage | unsafe_stage]):
+        adapter = TypeAdapter(annotation)
+        adapter.rebuild(_types_namespace=types)
+        schema = adapter.json_schema()
+        assert json.loads(json.dumps(schema)) == schema
+        predicate = schema["$defs"]["EDIDateElemMatchQuery"]["properties"]
+        assert "mostRecent" in predicate
+        assert "$expr" not in predicate
+        assert "$not" not in predicate
+        for name in ("DentLine", "ProfLine", "InstLine", "Activity", "UserState"):
+            assert f"{name}ElemMatchQuery" in schema["$defs"]
+
     valid = [
+        '{"$expr": {"$eq": [1, 1]}}',
+        '{"parsedData.serviceLines": {"$elemMatch": {"tooth": "a"}}}',
+        '{"parsedData.serviceLines": {"$elemMatch": {"procedure": {"$gt": 1}}}}',
+        '{"parsedData.serviceLines": {"$elemMatch": {"revenue": "a"}}}',
+        '{"alternative_lines": {"$elemMatch": {"tooth": "a"}}}',
+        '{"alternative_lines": {"$elemMatch": {"procedure": 1}}}',
         '{"pcnUserStates.statusId": {"$in": ["waiting"]}, "$or": [{"summary.ediDates": {"$elemMatch": {"mostRecent": {"$gte": start, "$lt": end}}}}, {"pcnUserStates.activity": {"$elemMatch": {"createdAt": {"$gte": start, "$lt": end}}}}]}',
         '{"pcnUserStates": {"$elemMatch": {"activity": {"$elemMatch": {"createdAt": {"$gte": start}}}, "statusId": "waiting"}}}',
         '{"pcnUserStates": {"$elemMatch": {"activity.createdAt": {"$lt": end}}}}',
@@ -459,6 +510,13 @@ def test_object_array_elem_match_type_checking(tmp_path: Path):
         '{"mixed": {"$elemMatch": {"createdAt": {"$gte": start}}}}',
     ]
     invalid = [
+        '{"parsedData.serviceLines": {"$elemMatch": {"procedure": "bad"}}}',
+        '{"parsedData.serviceLines": {"$elemMatch": {"unknown": 1}}}',
+        '{"summary.ediDates": {"$elemMatch": {"$expr": {"$eq": [1, 1]}}}}',
+        '{"summary.ediDates": {"$elemMatch": {"$not": {"pcn": "a"}}}}',
+        '{"summary.ediDates": {"$elemMatch": {"$or": [{"$expr": {"$eq": [1, 1]}}]}}}',
+        '{"summary.ediDates": {"$elemMatch": {"$and": [{"$not": {"pcn": "a"}}]}}}',
+        '{"pcnUserStates": {"$elemMatch": {"activity": {"$elemMatch": {"$expr": {"$eq": [1, 1]}}}}}}',
         '{"summary.ediDates": {"$elemMatch": {"missing": 1}}}',
         '{"summary.ediDates": {"$elemMatch": {"most_recent": {"$gte": start}}}}',
         '{"summary.ediDates": {"$elemMatch": {"mostRecent": {"$gte": "yesterday"}}}}',

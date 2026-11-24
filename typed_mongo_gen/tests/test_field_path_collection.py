@@ -146,3 +146,24 @@ def test_extract_list_element_type_optional_list():
 
 def test_extract_list_element_type_bare_list():
     assert extract_list_element_type(list) is None
+
+
+def test_extract_list_element_type_union_variants():
+    assert extract_list_element_type(list[str] | list[int] | None) == str | int
+
+
+def test_shared_union_paths_preserve_all_types():
+    class First(BaseModel):
+        values: list[str]
+        shared: str
+
+    class Second(BaseModel):
+        values: list[int]
+        shared: int
+
+    class Parent(BaseModel):
+        payload: First | Second
+
+    paths = collect_field_path_types(Parent)
+    assert paths["payload.values"] == list[str] | list[int]
+    assert paths["payload.shared"] == str | int

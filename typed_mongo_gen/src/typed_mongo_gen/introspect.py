@@ -136,7 +136,10 @@ def _walk_with_types(
         full_path = f"{prefix}{alias}" if not prefix else f"{prefix}.{alias}"
 
         annotation = model.model_fields[field_name].annotation
-        path_types[full_path] = annotation
+        if full_path in path_types and path_types[full_path] != annotation:
+            path_types[full_path] = typing.Union[path_types[full_path], annotation]  # pyright: ignore[reportDeprecated]
+        else:
+            path_types[full_path] = annotation
 
         nested_models = extract_base_models(annotation)
         for nested in nested_models:
@@ -177,7 +180,7 @@ def is_numeric_type(annotation: Any) -> bool:
 def extract_list_element_type(annotation: Any) -> Any | None:
     """Extract element type T from list[T], or None if not a list type.
 
-    Unwraps Optional (list[T] | None -> T), Annotated, TypeAliasType.
+    Unwraps Optional, Annotated, TypeAliasType; unions merge all list elements.
     """
     if isinstance(annotation, typing.TypeAliasType):
         return extract_list_element_type(annotation.__value__)
@@ -187,15 +190,16 @@ def extract_list_element_type(annotation: Any) -> Any | None:
     if origin is typing.Annotated:
         return extract_list_element_type(get_args(annotation)[0])
 
-    # Union: find the list member (e.g. list[str] | None)
+    # Union: merge element types from every list member, ignoring non-lists.
     if origin is types.UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated]
-        for arg in get_args(annotation):
-            if arg is type(None):
-                continue
-            result = extract_list_element_type(arg)
-            if result is not None:
-                return result
-        return None
+        elements = [
+            result
+            for arg in get_args(annotation)
+            if (result := extract_list_element_type(arg)) is not None
+        ]
+        if not elements:
+            return None
+        return typing.Union[tuple(elements)]  # pyright: ignore[reportDeprecated]
 
     if origin is list:
         args = get_args(annotation)

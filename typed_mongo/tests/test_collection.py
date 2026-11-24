@@ -131,3 +131,80 @@ def test_with_options_preserves_model_validation() -> None:
         await client.close()
 
     asyncio.run(run())
+
+
+def test_find_one_and_update_validates_and_forwards_options() -> None:
+    import pytest
+    from pydantic import Field, ValidationError
+    from pymongo import ReturnDocument
+
+    class AliasedModel(SampleModel):
+        value: str = Field(alias="storedValue")
+
+    async def run() -> None:
+        raw = AsyncMock()
+        collection = TypedCollection[
+            AliasedModel,
+            dict[str, Any],
+            str,
+            dict[str, Any],
+            dict[str, Any],
+            dict[str, Any],
+            dict[str, Any],
+        ](AliasedModel, cast(AsyncCollection[dict[str, Any]], raw))
+        query = {"storedValue": "before"}
+        update = {"$set": {"storedValue": "after"}}
+        raw.find_one_and_update.return_value = {"storedValue": "before"}
+        assert await collection.find_one_and_update(query, update) == AliasedModel(
+            storedValue="before"
+        )
+        assert (
+            raw.find_one_and_update.call_args.kwargs["return_document"]
+            == ReturnDocument.BEFORE
+        )
+
+        pipeline = [{"$set": {"storedValue": {"$concat": ["$storedValue", "!"]}}}]
+        session = cast(AsyncClientSession, object())
+        raw.find_one_and_update.return_value = {"storedValue": "after"}
+        assert await collection.find_one_and_update(
+            query,
+            pipeline,
+            return_document=ReturnDocument.AFTER,
+            upsert=True,
+            sort=[("storedValue", -1)],
+            array_filters=[{"x": 1}],
+            session=session,
+            hint="value_index",
+            let={"suffix": "!"},
+            collation={"locale": "en"},
+            maxTimeMS=1000,
+        ) == AliasedModel(storedValue="after")
+        raw.find_one_and_update.assert_awaited_with(
+            query,
+            pipeline,
+            return_document=ReturnDocument.AFTER,
+            upsert=True,
+            sort=[("storedValue", -1)],
+            array_filters=[{"x": 1}],
+            session=session,
+            hint="value_index",
+            let={"suffix": "!"},
+            collation={"locale": "en"},
+            maxTimeMS=1000,
+        )
+        raw.find_one_and_update.return_value = None
+        assert await collection.find_one_and_update(query, update) is None
+        raw.find_one_and_update.return_value = {"storedValue": {}}
+        with pytest.raises(ValidationError):
+            await collection.find_one_and_update(query, update)
+        raw.find_one_and_update.side_effect = RuntimeError("database failed")
+        with pytest.raises(RuntimeError, match="database failed"):
+            await collection.find_one_and_update(query, update)
+        raw.find_one.assert_not_awaited()
+
+        await collection.update_one(query, pipeline)
+        assert raw.update_one.call_args.args == (query, pipeline)
+        await collection.update_many(query, pipeline)
+        assert raw.update_many.call_args.args == (query, pipeline)
+
+    asyncio.run(run())

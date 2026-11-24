@@ -19,6 +19,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Literal, overload
 
 from pydantic import BaseModel
+from pymongo import ReturnDocument
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.command_cursor import AsyncCommandCursor
@@ -244,10 +245,46 @@ class TypedCollection[
         )  # pyright: ignore[reportAssignmentType]
         return await self._collection.replace_one(filter, doc, upsert=upsert)
 
+    async def find_one_and_update(
+        self,
+        filter: Query,
+        update: Update | list[PipelineStage],
+        *,
+        return_document: bool = ReturnDocument.BEFORE,
+        upsert: bool = False,
+        sort: Sequence[tuple[Path, _Direction]]
+        | Mapping[Path, _Direction]
+        | None = None,
+        array_filters: list[dict[str, Any]] | None = None,
+        session: AsyncClientSession | None = None,
+        **kwargs: Any,
+    ) -> M | None:
+        """Atomically update and validate the returned document.
+
+        Returns the pre-update model by default; use ReturnDocument.AFTER for
+        the updated model. Returns None when MongoDB returns no document.
+        Additional PyMongo options (e.g. hint, collation, let) are forwarded.
+        Projections must retain the fields required to validate the model.
+        MongoDB validates which aggregation stages are legal in an update.
+        """
+        doc = await self._collection.find_one_and_update(
+            filter,
+            update,
+            return_document=return_document,
+            upsert=upsert,
+            sort=sort,  # pyright: ignore[reportArgumentType]
+            array_filters=array_filters,
+            session=session,
+            **kwargs,
+        )
+        if doc is None:
+            return None
+        return self._model.model_validate(doc)
+
     async def update_one(
         self,
         filter: Query,
-        update: Update,
+        update: Update | list[PipelineStage],
         upsert: bool = False,
         array_filters: list[dict[str, Any]] | None = None,
         *,
@@ -265,13 +302,16 @@ class TypedCollection[
     async def update_many(
         self,
         filter: Query,
-        update: Update,
+        update: Update | list[PipelineStage],
         upsert: bool = False,
         array_filters: list[dict[str, Any]] | None = None,
     ) -> UpdateResult:
         """Type-safe update of multiple documents."""
         return await self._collection.update_many(
-            filter, update, upsert=upsert, array_filters=array_filters
+            filter,
+            update,
+            upsert=upsert,
+            array_filters=array_filters,
         )
 
     async def delete_one(

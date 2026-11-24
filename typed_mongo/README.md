@@ -121,3 +121,45 @@ query: Op[str] = {"$in": ["a", "b", "c"]}
 ```
 
 `AggregationStep` is a union of all MongoDB aggregation stage TypedDicts, used as the base type for untyped pipeline stages.
+
+## Atomic update and return
+
+`find_one_and_update()` accepts the same generated update document types as
+`update_one()`, or a list of generated pipeline stages. It performs one PyMongo
+operation and validates the returned document into the collection's Pydantic model.
+
+```python
+from pymongo import ReturnDocument
+from app._generated_types import UserPipelineStage
+
+pipeline: list[UserPipelineStage] = [
+    {"$set": {"age": {"$add": ["$age", 1]}}},
+]
+user = await users.find_one_and_update(
+    {"name": "Alice"}, pipeline, return_document=ReturnDocument.AFTER,
+)  # User | None
+```
+
+The default is `ReturnDocument.BEFORE`. A missing match returns `None`; with
+`upsert=True`, BEFORE also returns `None` for a newly inserted document. AFTER
+returns the inserted model. Returned documents use normal model validation,
+including aliases; incomplete projections or invalid data raise Pydantic's
+`ValidationError` after the write has occurred.
+
+`sort` uses generated field paths. `upsert`, `array_filters`, and `session` are
+forwarded, along with additional PyMongo keyword options such as `hint`,
+`collation`, `let`, and `maxTimeMS`. Query and update documents check field names
+and value types. Pipeline `$set` checks field names, while expression values use
+the existing open expression typing; MongoDB checks legal update stages and
+expression semantics. Use serialized field aliases in queries and updates.
+`update_one()` and `update_many()` also accept these typed pipelines.
+
+For local adoption before a release, install this checkout in the consuming
+project's environment (replace the path with your checkout):
+
+```bash
+uv pip install --python .venv/bin/python -e /path/to/typed-mongo/typed_mongo
+```
+
+Existing generated collections inherit the method without regeneration. No
+code generator update is required.

@@ -504,3 +504,79 @@ def test_object_array_elem_match_type_checking(tmp_path: Path):
     assert {
         d["range"]["start"]["line"] for d in diagnostics if d["severity"] == "error"
     } == set(range(5, 5 + len(invalid))), diagnostics
+
+
+def test_find_one_and_update_type_checking(tmp_path: Path):
+    models_file = tmp_path / "models.py"
+    models_file.write_text(
+        dedent("""\
+        from pydantic import Field
+        from typed_mongo import MongoCollectionModel
+        class Case(MongoCollectionModel):
+            __collection_name__ = "cases"
+            activity: str = Field(alias="activityEntry")
+            count: int
+    """)
+    )
+    models = runpy.run_path(str(models_file), run_name="models")
+    write_field_paths(
+        tmp_path / "generated.py", tmp_path / "generated.pyi", {"Case": models["Case"]}
+    )
+    (tmp_path / "valid.py").write_text(
+        dedent("""\
+        from typing import assert_type
+        from pymongo import ReturnDocument
+        from models import Case
+        from generated import CaseCollection, CaseQuery, CaseUpdate, CasePipelineStage, CaseFields
+        async def update(cases: CaseCollection) -> None:
+            query: CaseQuery = {"activityEntry": "before"}
+            update: CaseUpdate = {"$set": {"count": 2}}
+            fields: CaseFields = {"count": 3}
+            pipeline: list[CasePipelineStage] = [{"$set": {"count": fields["count"], "activityEntry": {"$concat": ["$activityEntry", "!"]}}}]
+            assert_type(await cases.find_one_and_update(query, update), Case | None)
+            assert_type(await cases.find_one_and_update(query, pipeline, return_document=ReturnDocument.AFTER), Case | None)
+            await cases.update_one(query, pipeline)
+            await cases.update_many(query, pipeline)
+    """)
+    )
+    invalid_calls = [
+        'await cases.find_one_and_update({"missing": 1}, {"$set": {"count": 2}})',
+        'await cases.find_one_and_update({}, {"$set": {"count": "bad"}})',
+        'await cases.find_one_and_update({}, {"$set": {"activity": "bad alias"}})',
+        'await cases.find_one_and_update({}, [{"$set": {"missing": 2}}])',
+    ]
+    (tmp_path / "invalid.py").write_text(
+        "from generated import CaseCollection\nasync def invalid(cases: CaseCollection) -> None:\n"
+        + "\n".join("    " + call for call in invalid_calls)
+    )
+    config = tmp_path / "pyrightconfig.json"
+    config.write_text(
+        json.dumps(
+            {
+                "include": ["valid.py", "invalid.py"],
+                "pythonVersion": "3.12",
+                "typeCheckingMode": "standard",
+            }
+        )
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "basedpyright",
+            "--outputjson",
+            "--pythonpath",
+            sys.executable,
+            "--project",
+            str(config),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    diagnostics = json.loads(result.stdout)["generalDiagnostics"]
+    errors = [d for d in diagnostics if d["severity"] == "error"]
+    assert not [d for d in errors if Path(d["file"]).name != "invalid.py"], diagnostics
+    assert {d["range"]["start"]["line"] for d in errors} == set(
+        range(2, 2 + len(invalid_calls))
+    ), diagnostics

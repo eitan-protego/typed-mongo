@@ -928,3 +928,30 @@ def test_no_optional_path_when_no_defaults(tmp_path: Path):
     # PipelineStage should not include AggUnsetStage
     stage_section = content.split("type AllRequiredPipelineStage = (")[1].split(")")[0]
     assert "AggUnsetStage" not in stage_section
+
+
+def test_only_array_elements_get_element_predicates(tmp_path: Path):
+    class Leaf(BaseModel):
+        value: str
+
+    class ObjectOnly(BaseModel):
+        value: int
+
+    class Container(BaseModel):
+        objects: list[Leaf]
+        single: ObjectOnly
+
+    runtime_path = tmp_path / "out.py"
+    stub_path = tmp_path / "out.pyi"
+    write_field_paths(runtime_path, stub_path, {"Container": Container})
+    stub = stub_path.read_text()
+    runtime = runtime_path.read_text()
+
+    assert "LeafElemMatchQuery = TypedDict(" in stub
+    for name in ("Container", "ObjectOnly"):
+        assert f"{name}ElemMatchQuery" not in stub
+        assert f"{name}ElemMatchQuery" not in runtime
+    # Existing nested Query types retain their full public operator surface.
+    for name in ("Leaf", "ObjectOnly"):
+        assert f"{name}Query = TypedDict(" in stub
+        assert f'"$not": "{name}Query"' in stub

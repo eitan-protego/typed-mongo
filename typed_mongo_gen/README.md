@@ -72,11 +72,45 @@ query: CaseQuery = {
 }
 ```
 
-For `list[PcnEDIDate]`, the generator adds `PcnEDIDateQuery` to the existing
+For `list[PcnEDIDate]`, the generator adds `PcnEDIDateElemMatchQuery` to the existing
 `ElemMatch[NontrivialOp[PcnEDIDateDict]]` payload. Field names and operator
 values remain checked. Scalar-array predicates and complete object equality
 continue to use their existing types. Regenerate both output files after
 upgrading the generator; no runtime operator change is required.
+
+Element predicates exclude `$expr` and document-level `$not`, including inside
+logical branches; root queries retain their existing operators. Shared array
+paths across model union variants preserve every variant's predicate type.
+Element-predicate definitions are emitted only for models used as array elements.
+Existing nested `*Query` types retain their full root-query operator surface;
+they are not aliases to the stricter element predicates.
+
+## Executable stub contract
+
+Generated `.pyi` files support execution with `runpy.run_path()` and runtime
+Pydantic JSON Schema generation. The model modules and generator dependencies
+must be importable. Forward references in element-predicate unions use
+`Union[...]` so the stub evaluates without rewriting its AST.
+
+Pass the returned namespace to Pydantic when resolving forward references,
+including nested array predicates and recursive logical clauses:
+
+```python
+import runpy
+from pydantic import TypeAdapter
+
+types = runpy.run_path("app/_generated_types.pyi")
+adapter = TypeAdapter(types["CaseQuery"])
+adapter.rebuild(_types_namespace=types)
+schema = adapter.json_schema()
+
+pipeline = TypeAdapter(list[types["CasePipelineStage"] | types["CaseUnsafeStage"]])
+pipeline.rebuild(_types_namespace=types)
+pipeline_schema = pipeline.json_schema()
+```
+
+Regenerate both output files after upgrading; existing stubs are not patched
+at load time.
 
 ## Generated types per model
 

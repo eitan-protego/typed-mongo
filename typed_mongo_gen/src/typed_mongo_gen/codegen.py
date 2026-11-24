@@ -1006,6 +1006,14 @@ def write_field_paths(
     # Collect all nested BaseModel types and assign Dict names
     model_dict_names = _collect_all_nested_models(models)
     top_level_classes = set(models.values())
+    element_models = {
+        nested
+        for model in model_dict_names
+        for field in model.model_fields.values()
+        for nested in _object_element_models(
+            extract_list_element_type(field.annotation)
+        )
+    }
 
     all_imports: set[tuple[str, str]] = set()
     model_path_types: dict[str, dict[str, Any]] = {}
@@ -1050,6 +1058,8 @@ def write_field_paths(
 
         # Element predicates exclude root-only operators, including in logical branches.
         for model_cls in sorted_models:
+            if model_cls not in element_models:
+                continue
             name = model_dict_names[model_cls].removesuffix("Dict")
             runtime_f.write(f"{name}ElemMatchQuery = dict[str, Any]\n")
             _write_query(

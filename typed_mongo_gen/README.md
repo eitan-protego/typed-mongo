@@ -81,6 +81,9 @@ upgrading the generator; no runtime operator change is required.
 Element predicates exclude `$expr` and document-level `$not`, including inside
 logical branches; root queries retain their existing operators. Shared array
 paths across model union variants preserve every variant's predicate type.
+Element-predicate definitions are emitted only for models used as array elements.
+Existing nested `*Query` types retain their full root-query operator surface;
+they are not aliases to the stricter element predicates.
 
 ## Executable stub contract
 
